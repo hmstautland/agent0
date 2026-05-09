@@ -1,0 +1,58 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Agent UI</title>
+  </head>
+  <body>
+    <h1>Agent 0</h1>
+
+    <button onclick="startRecording()">🎤 Start</button>
+    <button onclick="stopRecording()">⏹ Stop</button>
+
+    <form method="post" action="/ask">
+      <input type="text" name="input" id="input" placeholder="Ask something" />
+      <button type="submit">Send</button>
+    </form>
+
+    {% if response %}
+    <h3>Response :</h3>
+    <pre>{{ response }}</pre>
+    {% endif %}
+  </body>
+</html>
+
+<script>
+  let mediaRecorder;
+  let audioChunks = [];
+
+  async function startRecording() {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+
+    mediaRecorder.ondataavailable = (event) => {
+      audioChunks.push(event.data);
+    };
+
+    mediaRecorder.start();
+  }
+
+  function stopRecording() {
+    mediaRecorder.stop();
+
+    mediaRecorder.onstop = async () => {
+      const blob = new Blob(audioChunks);
+      audioChunks = [];
+
+      const formData = new FormData();
+      formData.append("file", blob, "audio.wav");
+
+      const res = await fetch("/speech", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+      document.getElementById("input").value = data.text;
+    };
+  }
+</script>
