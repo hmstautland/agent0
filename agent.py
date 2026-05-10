@@ -28,6 +28,7 @@ def execute_tool(action, args):
 def run_agent(user_input):
     log_event({"type": "user_input", "input": user_input})
     context = f"User request: {user_input}\n"
+    print(f"Input: {user_input}")
 
     MAX_STEPS = 5
     for step in range(MAX_STEPS):
@@ -38,16 +39,19 @@ def run_agent(user_input):
         
         try:
             decision = json.loads(raw)
+            print(f"LLM decision (raw): {raw}")
         except:
             return raw  # fallback if model fails JSON
 
         action = decision.get("action")
+        print(f"Step {step} - LLM decision: {action}")
 
         # Final answer - no more action needed
         if action == "none":
             return decision.get("response")
 
         tool = TOOLS.get(action)
+
         if not tool:
             return f"Unknown action: {action}"
         

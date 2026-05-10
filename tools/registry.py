@@ -8,7 +8,7 @@ TOOLS = {
         "risk": "medium"
     },
     "read_files": {
-        "func": "tools.files.read_file",
+        "func": "tools.files.read_files",
         "risk": "medium"
     },
     "write_file": {

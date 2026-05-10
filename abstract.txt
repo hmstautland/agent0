@@ -1,0 +1,44 @@
+🧠 Abstract
+
+This project implements a local-first AI agent powered by Ollama (Mistral 7B) with a modular Python architecture. 
+The agent supports multi-step reasoning, controlled tool usage, and a permission layer for safe interaction with external 
+systems and local resources. It can perform tasks such as web search, file inspection, and calendar management, while
+maintaining security through explicit approval flows, logging, and sandboxed execution. A lightweight FastAPI-based 
+dashboard provides a user interface, and the system is designed to be extensible toward more advanced agent capabilities.
+
+🧱 Architecture Overview
+User (CLI / UI / Voice)
+        ↓
+Agent Loop (multi-step reasoning)
+        ↓
+Permission Layer (approve/deny)
+        ↓
+Tool Layer (web, files, calendar)
+        ↓
+LLM (Ollama - Mistral)
+
+📂 Project Structure
+agent0/
+├── agent.py                # main agent loop
+├── config/
+│   ├── settings.py         # rules, limits
+│   └── system_prompt.py    # LLM behavior
+├── core/
+│   ├── llm.py              # ollama calls
+│   ├── permission.py       # approval logic
+│   ├── logger.py           # logging
+│   ├── diff.py             # diff preview
+│   └── ui.py               # FastAPI dashboard
+├── tools/
+│   ├── web.py
+│   ├── calendar.py
+│   ├── files.py
+│   └── registry.py
+├── templates/
+│   └── index.html
+├── storage/
+│   └── logs.txt
+├── venv/
+└── start_agent.bat
+
+
