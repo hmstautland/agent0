@@ -83,12 +83,18 @@ def run_agent(user_input, permission_decisions=None):
 
         result = execute_tool(action, args)
 
+        # Safely serialize result for logging (some tools return lists/dicts)
+        try:
+            result_preview = result if isinstance(result, str) else json.dumps(result, default=str)
+        except Exception:
+            result_preview = str(result)
+
         log_event({
             "type": "tool_execution",
             "step": step,
             "action": action,
             "args": args,
-            "result": result(result)[:500]
+            "result": result_preview[:500]
         })
 
       # Feed result back into context

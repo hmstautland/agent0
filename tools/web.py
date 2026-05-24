@@ -2,6 +2,44 @@ from datetime import datetime
 from ddgs import DDGS
 from config.settings import MAX_RESULTS
 import time
+import requests
+import re
+
+
+def _extract_text_from_html(html):
+    # remove script/style
+    html = re.sub(r"<script.*?>.*?</script>", "", html, flags=re.S|re.I)
+    html = re.sub(r"<style.*?>.*?</style>", "", html, flags=re.S|re.I)
+    # remove tags
+    text = re.sub(r"<[^>]+>", " ", html)
+    # collapse whitespace
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def read_web_content(urls):
+    """Fetch and return textual content for a list of URLs."""
+    if not rate_limit("read_web_content"):
+        return "Rate limit exceeded"
+
+    if not isinstance(urls, (list, tuple)):
+        return "urls must be a list"
+
+    results = {}
+    for url in urls:
+        try:
+            r = requests.get(url, timeout=10)
+            if r.status_code != 200:
+                results[url] = f"HTTP {r.status_code}"
+                continue
+
+            text = _extract_text_from_html(r.text)
+            # limit size
+            results[url] = text[:20000]
+        except Exception as e:
+            results[url] = str(e)
+
+    return results
 
 def search_web(query):
     if not rate_limit("search_web"):
