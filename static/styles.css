@@ -134,19 +134,33 @@ body {
 }
 
 /* CALENDAR */
-
 table {
+  margin-top: 20px;
   width: 100%;
   border-collapse: collapse;
+  color: rgba(255, 255, 255, 0.08);
 }
 
 th,
 td {
-  padding: 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 th {
-  color: #aaa;
+  padding: 1rem;
+  background: #f4f4f4;
   text-align: left;
+}
+
+td {
+  padding: 0.5rem;
+}
+
+tr {
+  background: #fafafa;
+}
+
+tr:nth-child(even) {
+  color: #fafafa;
+  background: rgba(255, 255, 255, 0.08);
 }

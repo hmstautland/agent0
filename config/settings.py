@@ -7,7 +7,7 @@ RULES = {
     "create_calendar_event": "ask",
     "get_project_structure": "auto",
     "write_file": "ask",
-    "read_file": "ask",
+    "read_files": "auto",
     "search_files": "auto",
 }
 

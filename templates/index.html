@@ -20,29 +20,6 @@
       href="/favicon/apple-touch-icon.png"
     />
     <link rel="manifest" href="/favicon/site.webmanifest" />
-
-    <style>
-      table {
-        border-collapse: collapse;
-        width: 100%;
-        margin-top: 20px;
-      }
-
-      th,
-      td {
-        padding: 12px;
-        border: 1px solid #ccc;
-        text-align: left;
-      }
-
-      th {
-        background: #f4f4f4;
-      }
-
-      tr:nth-child(even) {
-        background: #fafafa;
-      }
-    </style>
   </head>
   <body>
     <canvas id="starfield"></canvas>
@@ -58,9 +35,6 @@
           placeholder="Ask something"
           autocomplete="on"
         />
-
-        <button onclick="startRecording()">🎤 Start</button>
-        <button onclick="stopRecording()">⏹ Stop</button>
 
         <button type="submit" class="send-btn">Send ➜</button>
         <button
@@ -141,12 +115,18 @@
             name="permission_risk"
             value="{{ permission.risk }}"
           />
+          {% if permission.external %}
           <button type="submit" name="permission_decision" value="local">
             Try local LLM first
           </button>
           <button type="submit" name="permission_decision" value="y">
             Use external tools
           </button>
+          {% else %}
+          <button type="submit" name="permission_decision" value="y">
+            Approve
+          </button>
+          {% endif %}
           <button type="submit" name="permission_decision" value="n">
             Reject
           </button>

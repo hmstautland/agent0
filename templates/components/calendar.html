@@ -1,0 +1,23 @@
+<div class="calendar-card">
+  <h2>📅 Calendar</h2>
+
+  <table>
+    <tr>
+      <th>Title</th>
+      <th>Date</th>
+      <th>Start Time</th>
+      <th>End Time</th>
+      <th>Description</th>
+    </tr>
+
+    {% for event in calendar_data %}
+    <tr>
+      <td>{{ event.name }}</td>
+      <td>{{ event.date.strftime('%Y-%m-%d') }}</td>
+      <td>{{ event.date.strftime('%H:%M') }}</td>
+      <td>{{ event.end.strftime('%H:%M') }}</td>
+      <td>{{ event.description }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>

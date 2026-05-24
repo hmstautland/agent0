@@ -7,6 +7,9 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from core.speech_to_text import transcribe_audio
 from fastapi.staticfiles import StaticFiles
+from tools.registry import TOOLS
+import tools.calendar as calmod
+from datetime import datetime
 
 import json
 
@@ -24,6 +27,78 @@ async def ask(request: Request):
     try:
         form = await request.form()
         user_input = form.get("input")
+
+        # Shortcut: if user asked to see their calendar, bypass LLM and show structured events
+        lu = (user_input or "").lower()
+        if "calendar" in lu and ("show" in lu or "my calendar" in lu or "what's on" in lu or "what is on" in lu):
+            events = calmod.read_calendar()
+            # If asking for today, filter to today's date
+            if "today" in lu:
+                today = datetime.now().date()
+                def _event_date(ev):
+                    d = ev.get("date")
+                    if hasattr(d, "date") and callable(d.date):
+                        return d.date()
+                    if isinstance(d, datetime):
+                        return d.date()
+                    if hasattr(d, "naive"):
+                        try:
+                            return d.naive.date()
+                        except Exception:
+                            pass
+                    return None
+
+                events = [e for e in events if _event_date(e) == today]
+
+            # If asking for a specific day like 'may 17', try to parse and filter
+            import re
+            m = re.search(r"(\b\d{1,2}\b)\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*", lu)
+            if m:
+                day = int(m.group(1))
+                month_str = m.group(2)
+                try:
+                    dt = calmod._parse_datetime(f"{day} {month_str}")
+                    def _event_date2(ev):
+                        d = ev.get("date")
+                        if hasattr(d, "date") and callable(d.date):
+                            return d.date()
+                        if isinstance(d, datetime):
+                            return d.date()
+                        if hasattr(d, "naive"):
+                            try:
+                                return d.naive.date()
+                            except Exception:
+                                pass
+                        return None
+
+                    events = [e for e in events if _event_date2(e) == dt.date()]
+                except Exception:
+                    pass
+
+            # Normalize date objects to datetimes for the template
+            def _to_dt(x):
+                if hasattr(x, "naive"):
+                    try:
+                        return x.naive
+                    except Exception:
+                        pass
+                if hasattr(x, "datetime"):
+                    try:
+                        return x.datetime
+                    except Exception:
+                        pass
+                return x
+
+            for e in events:
+                if "date" in e:
+                    e["date"] = _to_dt(e["date"])
+                if "end" in e:
+                    e["end"] = _to_dt(e["end"])
+
+            return templates.TemplateResponse(name="index.html", request=request, context={
+                "response": "",
+                "calendar_data": events,
+            })
 
         permission_decision = form.get("permission_decision")
         permission_action = form.get("permission_action")
@@ -71,15 +146,49 @@ async def ask(request: Request):
                         "args": json.dumps(pr.args),
                         "risk": pr.risk,
                         "reason": pr.reason,
+                        "external": TOOLS.get(pr.action, {}).get("external", False),
                     },
                     "input": user_input,
                 })
 
+        calendar_data = None
+
+        if isinstance(response, list) and response:
+            first = response[0]
+            if isinstance(first, dict) and "date" in first and "end" in first:
+                calendar_data = response
+                response = ""
+
+        if isinstance(response, dict) and response.get("events"):
+            calendar_data = response["events"]
+            response = ""
+
         if not isinstance(response, str):
             response = json.dumps(response, indent=2)
+        # Normalize calendar_data dates if present
+        def _to_dt(x):
+            if hasattr(x, "naive"):
+                try:
+                    return x.naive
+                except Exception:
+                    pass
+            if hasattr(x, "datetime"):
+                try:
+                    return x.datetime
+                except Exception:
+                    pass
+            return x
+
+        if calendar_data:
+            for e in calendar_data:
+                if "date" in e:
+                    e["date"] = _to_dt(e["date"])
+                if "end" in e:
+                    e["end"] = _to_dt(e["end"])
 
         return templates.TemplateResponse(name="index.html", request=request, context={    
-            "response": str(response)
+            "response": str(response),
+            "calendar_data": calendar_data
         })
     
     except Exception as e:

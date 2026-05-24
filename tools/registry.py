@@ -23,26 +23,30 @@ TOOLS = {
     "get_news": {
         "func": "tools.web.get_news",
         "description": "Get latest news headlines",
-        "risk": "low"
+        "risk": "low",
+        "external": 1
     },
     "search_web": {
         "func": "tools.web.search_web",
         "description": "Search the web for information",
-        "risk": "medium"
+        "risk": "medium",
+        "external": 1
     },
     "read_web_content": {
         "func": "tools.web.read_web_content",
         "description": "Read and extract textual content from web pages (list of URLs)",
-        "risk": "medium"
+        "risk": "medium",
+        "external": 1
     },
     "read_email": {
         "func": "tools.email.read_email",
         "description": "Read latest emails",
-        "risk": "high"
+        "risk": "high",
+        "external": 1
     },
     "create_calendar_event": {
         "func": "tools.calendar.create_event",
-        "description": "Create calendar event",
+        "description": "Create a calendar event with title, start, and optional end time",
         "risk": "medium"
     },
     "read_calendar": {

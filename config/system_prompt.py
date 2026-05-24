@@ -16,6 +16,7 @@ RULES:
 - ALWAYS search first when unsure
 - ONLY modify files after reading them with permission
 - External access (web, email, calendar) requires permission
+- For calendar appointment requests, use the calendar tool.
 
 When modifying code:
 1. First find relevant files using search_files
