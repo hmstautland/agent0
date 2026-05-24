@@ -25,7 +25,15 @@ def execute_tool(action, args):
 
     return func(**args);
 
-def run_agent(user_input):
+def build_tool_prompt():
+    lines = []
+
+    for name, tool in TOOLS.items():
+        lines.append(f"- {name}: {tool['description']}")
+
+    return "\n".join(lines)
+
+def run_agent(user_input, permission_decisions=None):
     log_event({"type": "user_input", "input": user_input})
     context = f"User request: {user_input}\n"
     print(f"Input: {user_input}")
@@ -34,7 +42,18 @@ def run_agent(user_input):
     for step in range(MAX_STEPS):
         decision_prompt  = SYSTEM_PROMPT + "\n" + context
 
-        raw = query_llm(decision_prompt)    
+        tool_prompt = build_tool_prompt()
+
+        decision_prompt = f"""
+        {SYSTEM_PROMPT}
+
+        Available tools:
+        {tool_prompt}
+
+        {context}
+        """
+        
+        raw = query_llm(decision_prompt)
         log_event({"type": "llm_raw_decision", "raw": raw})
         
         try:
@@ -57,7 +76,7 @@ def run_agent(user_input):
         
         args = decision.get("arguments", {})
 
-        approved = request_permission(action, args, tool["risk"])
+        approved = request_permission(action, args, tool["risk"], decisions=permission_decisions, reason=decision.get("reason"))
 
         if not approved:
             return "Action denied"

@@ -16,6 +16,29 @@
       href="/favicon/apple-touch-icon.png"
     />
     <link rel="manifest" href="/favicon/site.webmanifest" />
+
+    <style>
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        margin-top: 20px;
+      }
+
+      th,
+      td {
+        padding: 12px;
+        border: 1px solid #ccc;
+        text-align: left;
+      }
+
+      th {
+        background: #f4f4f4;
+      }
+
+      tr:nth-child(even) {
+        background: #fafafa;
+      }
+    </style>
   </head>
   <body>
     <h1>Agent 0</h1>
@@ -31,6 +54,45 @@
     {% if response %}
     <h3>Response :</h3>
     <pre>{{ response }}</pre>
+    {% endif %} {% if calendar_data %}
+    <section>{% include "components/calendar.html" %}</section>
+    {% endif %} {% if error %}
+    <h3 style="color: red">Error :</h3>
+    <pre>{{ error }}</pre>
+    {% endif %} {% if permission %}
+    <section style="border: 1px solid #f99; padding: 12px; margin-top: 20px">
+      <h3 style="color: darkorange">Permission Required</h3>
+      <p><strong>Action:</strong> {{ permission.action }}</p>
+      <p><strong>Risk:</strong> {{ permission.risk }}</p>
+      <p><strong>Reason:</strong> {{ permission.reason }}</p>
+      <p><strong>Arguments:</strong></p>
+      <pre>{{ permission.args }}</pre>
+
+      <form method="post" action="/ask">
+        <input type="hidden" name="input" value="{{ input }}" />
+        <input
+          type="hidden"
+          name="permission_action"
+          value="{{ permission.action }}"
+        />
+        <input
+          type="hidden"
+          name="permission_args"
+          value="{{ permission.args|e }}"
+        />
+        <input
+          type="hidden"
+          name="permission_risk"
+          value="{{ permission.risk }}"
+        />
+        <button type="submit" name="permission_decision" value="y">
+          Approve
+        </button>
+        <button type="submit" name="permission_decision" value="n">
+          Reject
+        </button>
+      </form>
+    </section>
     {% endif %}
   </body>
 </html>
