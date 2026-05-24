@@ -102,6 +102,48 @@ def run_agent(user_input, permission_decisions=None):
 
     return "Max steps reached without conclusion."
 
+
+def run_agent_local(user_input, permission_action=None, permission_args=None, permission_risk=None):
+    log_event({"type": "user_input", "input": user_input, "mode": "local_fallback"})
+    context = f"User request: {user_input}\n"
+    prompt = f"""
+    You are a helpful assistant. Answer directly from your knowledge without using any tools or external access.
+    
+    User question: {user_input}
+    """
+
+    raw = query_llm(prompt)
+    log_event({"type": "llm_raw_decision", "raw": raw, "mode": "local_fallback"})
+
+    try:
+        decision = json.loads(raw)
+        action = decision.get("action")
+        
+        # If it's JSON with action == "none", return the response
+        if action == "none":
+            return decision.get("response")
+        
+        # If it's JSON without an action field but has a response, return that
+        if "response" in decision and action is None:
+            return decision.get("response")
+        
+        # If it has an action other than "none", it wants to use tools - trigger fallback
+        if action and action != "none":
+            return {
+                "fallback_to_external": True,
+                "message": "Local model could not answer directly; please try external tools.",
+                "permission_action": permission_action,
+                "permission_args": permission_args,
+                "permission_risk": permission_risk
+            }
+    except Exception:
+        # Not valid JSON - assume it's a plain text answer from the model
+        pass
+    
+    # If we get here, either it's plain text or JSON without recognizable structure
+    # Return it as the answer
+    return raw
+
     # Send result back to LLM for summarization
     final_prompt = f"""
     User asked: {user_input}

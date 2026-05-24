@@ -30,6 +30,11 @@ TOOLS = {
         "description": "Search the web for information",
         "risk": "medium"
     },
+    "read_web_content": {
+        "func": "tools.web.read_web_content",
+        "description": "Read and extract textual content from web pages (list of URLs)",
+        "risk": "medium"
+    },
     "read_email": {
         "func": "tools.email.read_email",
         "description": "Read latest emails",

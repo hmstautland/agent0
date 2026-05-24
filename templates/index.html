@@ -54,6 +54,31 @@
     {% if response %}
     <h3>Response :</h3>
     <pre>{{ response }}</pre>
+    {% if fallback_permission %}
+    <section style="border: 1px solid #ff9; padding: 12px; margin-top: 12px">
+      <form method="post" action="/ask">
+        <input type="hidden" name="input" value="{{ input }}" />
+        <input
+          type="hidden"
+          name="permission_action"
+          value="{{ fallback_permission.action }}"
+        />
+        <input
+          type="hidden"
+          name="permission_args"
+          value="{{ fallback_permission.args }}"
+        />
+        <input
+          type="hidden"
+          name="permission_risk"
+          value="{{ fallback_permission.risk }}"
+        />
+        <button type="submit" name="permission_decision" value="y">
+          Use external tools
+        </button>
+      </form>
+    </section>
+    {% endif %}
     {% endif %} {% if calendar_data %}
     <section>{% include "components/calendar.html" %}</section>
     {% endif %} {% if error %}
@@ -85,8 +110,11 @@
           name="permission_risk"
           value="{{ permission.risk }}"
         />
+        <button type="submit" name="permission_decision" value="local">
+          Try local LLM first
+        </button>
         <button type="submit" name="permission_decision" value="y">
-          Approve
+          Use external tools
         </button>
         <button type="submit" name="permission_decision" value="n">
           Reject
