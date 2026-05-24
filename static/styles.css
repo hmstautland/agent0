@@ -1,0 +1,152 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  overflow-x: hidden;
+  background: black;
+  font-family: Arial, sans-serif;
+  color: white;
+  height: 100vh;
+}
+
+#starfield {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+}
+
+.main-container {
+  width: 100%;
+  height: 100vh;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+
+  padding: 20px;
+}
+
+.logo {
+  font-size: 48px;
+  margin-bottom: 30px;
+  font-weight: bold;
+
+  background: linear-gradient(90deg, #fff, #999);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.chat-form {
+  width: 100%;
+  max-width: 850px;
+
+  display: flex;
+  align-items: center;
+
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+
+  border: 1px solid rgba(255, 255, 255, 0.1);
+
+  border-radius: 30px;
+
+  padding: 10px 15px;
+
+  box-shadow:
+    0 0 40px rgba(255, 255, 255, 0.05),
+    0 0 100px rgba(255, 255, 255, 0.03);
+}
+
+.chat-form input {
+  flex: 1;
+
+  background: transparent;
+  border: none;
+
+  color: white;
+
+  font-size: 18px;
+
+  outline: none;
+
+  padding: 12px;
+}
+
+.chat-form input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.icon-btn,
+.send-btn {
+  border: none;
+  background: transparent;
+  color: white;
+
+  cursor: pointer;
+
+  font-size: 22px;
+
+  padding: 10px;
+
+  transition: 0.2s;
+}
+
+.icon-btn:hover,
+.send-btn:hover {
+  transform: scale(1.15);
+}
+
+.response-card,
+.error-card {
+  width: 100%;
+  max-width: 850px;
+
+  margin-top: 30px;
+
+  background: rgba(255, 255, 255, 0.05);
+
+  border-radius: 20px;
+
+  padding: 20px;
+
+  backdrop-filter: blur(10px);
+
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.response-card pre,
+.error-card pre {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: white;
+}
+
+.error-card {
+  border: 1px solid rgba(255, 0, 0, 0.3);
+}
+
+/* CALENDAR */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+th {
+  color: #aaa;
+  text-align: left;
+}

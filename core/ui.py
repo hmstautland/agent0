@@ -6,10 +6,15 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from core.speech_to_text import transcribe_audio
+from fastapi.staticfiles import StaticFiles
+
 import json
 
 app = FastAPI()
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     return templates.TemplateResponse(name="index.html",request=request,context={"response":""})
@@ -24,6 +29,13 @@ async def ask(request: Request):
         permission_action = form.get("permission_action")
         permission_args = form.get("permission_args")
         permission_risk = form.get("permission_risk")
+
+        if permission_args:
+            try:
+                permission_args = json.loads(permission_args)
+            except Exception:
+                pass
+
         permission_decisions = None
 
         if permission_decision == "local":

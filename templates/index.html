@@ -2,6 +2,10 @@
 <html>
   <head>
     <title>Agent UI</title>
+
+    <link rel="stylesheet" href="/static/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
     <link
       rel="icon"
       type="image/png"
@@ -41,122 +45,173 @@
     </style>
   </head>
   <body>
-    <h1>Agent 0</h1>
+    <canvas id="starfield"></canvas>
+    <div class="main-container">
+      <h1 class="logo">Agent 0</h1>
 
-    <button onclick="startRecording()">🎤 Start</button>
-    <button onclick="stopRecording()">⏹ Stop</button>
+      <form method="post" action="/ask" class="chat-form">
+        <button type="button" class="icon-btn add-btn">+</button>
+        <input
+          type="text"
+          name="input"
+          id="input"
+          placeholder="Ask something"
+          autocomplete="on"
+        />
 
-    <form method="post" action="/ask">
-      <input type="text" name="input" id="input" placeholder="Ask something" />
-      <button type="submit">Send</button>
-    </form>
+        <button onclick="startRecording()">🎤 Start</button>
+        <button onclick="stopRecording()">⏹ Stop</button>
 
-    {% if response %}
-    <h3>Response :</h3>
-    <pre>{{ response }}</pre>
-    {% if fallback_permission %}
-    <section style="border: 1px solid #ff9; padding: 12px; margin-top: 12px">
-      <form method="post" action="/ask">
-        <input type="hidden" name="input" value="{{ input }}" />
-        <input
-          type="hidden"
-          name="permission_action"
-          value="{{ fallback_permission.action }}"
-        />
-        <input
-          type="hidden"
-          name="permission_args"
-          value="{{ fallback_permission.args }}"
-        />
-        <input
-          type="hidden"
-          name="permission_risk"
-          value="{{ fallback_permission.risk }}"
-        />
-        <button type="submit" name="permission_decision" value="y">
-          Use external tools
+        <button type="submit" class="send-btn">Send ➜</button>
+        <button
+          type="button"
+          class="icon-btn mic-btn"
+          onclick="toggleRecording()"
+        >
+          🎤
         </button>
       </form>
-    </section>
-    {% endif %}
-    {% endif %} {% if calendar_data %}
-    <section>{% include "components/calendar.html" %}</section>
-    {% endif %} {% if error %}
-    <h3 style="color: red">Error :</h3>
-    <pre>{{ error }}</pre>
-    {% endif %} {% if permission %}
-    <section style="border: 1px solid #f99; padding: 12px; margin-top: 20px">
-      <h3 style="color: darkorange">Permission Required</h3>
-      <p><strong>Action:</strong> {{ permission.action }}</p>
-      <p><strong>Risk:</strong> {{ permission.risk }}</p>
-      <p><strong>Reason:</strong> {{ permission.reason }}</p>
-      <p><strong>Arguments:</strong></p>
-      <pre>{{ permission.args }}</pre>
 
-      <form method="post" action="/ask">
-        <input type="hidden" name="input" value="{{ input }}" />
-        <input
-          type="hidden"
-          name="permission_action"
-          value="{{ permission.action }}"
-        />
-        <input
-          type="hidden"
-          name="permission_args"
-          value="{{ permission.args|e }}"
-        />
-        <input
-          type="hidden"
-          name="permission_risk"
-          value="{{ permission.risk }}"
-        />
-        <button type="submit" name="permission_decision" value="local">
-          Try local LLM first
-        </button>
-        <button type="submit" name="permission_decision" value="y">
-          Use external tools
-        </button>
-        <button type="submit" name="permission_decision" value="n">
-          Reject
-        </button>
-      </form>
-    </section>
-    {% endif %}
+      {% if response %}
+      <div class="response-card">
+        <h3>Response :</h3>
+
+        <pre>{{ response }}</pre>
+      </div>
+
+      {% if fallback_permission %}
+      <section style="border: 1px solid #ff9; padding: 12px; margin-top: 12px">
+        <form method="post" action="/ask" class="chat-form">
+          <input type="hidden" name="input" value="{{ input }}" />
+          <input
+            type="hidden"
+            name="permission_action"
+            value="{{ fallback_permission.action }}"
+          />
+          <input
+            type="hidden"
+            name="permission_args"
+            value="{{ fallback_permission.args|e }}"
+          />
+          <input
+            type="hidden"
+            name="permission_risk"
+            value="{{ fallback_permission.risk }}"
+          />
+          <button type="submit" name="permission_decision" value="y">
+            Use external tools
+          </button>
+        </form>
+      </section>
+
+      {% endif %} {% endif %} {% if calendar_data %}
+      <div class="response-card">
+        <section>{% include "components/calendar.html" %}</section>
+      </div>
+
+      {% endif %} {% if error %}
+      <div class="error-card">
+        <h3 style="color: red">Error :</h3>
+        <pre>{{ error }}</pre>
+      </div>
+
+      {% endif %} {% if permission %}
+      <section style="border: 1px solid #f99; padding: 12px; margin-top: 20px">
+        <h3 style="color: darkorange">Permission Required</h3>
+        <p><strong>Action:</strong> {{ permission.action }}</p>
+        <p><strong>Risk:</strong> {{ permission.risk }}</p>
+        <p><strong>Reason:</strong> {{ permission.reason }}</p>
+        <p><strong>Arguments:</strong></p>
+        <pre>{{ permission.args }}</pre>
+
+        <form method="post" action="/ask">
+          <input type="hidden" name="input" value="{{ input }}" />
+          <input
+            type="hidden"
+            name="permission_action"
+            value="{{ permission.action }}"
+          />
+          <input
+            type="hidden"
+            name="permission_args"
+            value="{{ permission.args|e }}"
+          />
+          <input
+            type="hidden"
+            name="permission_risk"
+            value="{{ permission.risk }}"
+          />
+          <button type="submit" name="permission_decision" value="local">
+            Try local LLM first
+          </button>
+          <button type="submit" name="permission_decision" value="y">
+            Use external tools
+          </button>
+          <button type="submit" name="permission_decision" value="n">
+            Reject
+          </button>
+        </form>
+      </section>
+      {% endif %}
+    </div>
+    <script src="/static/starfield.js"></script>
+
+    <script>
+      let mediaRecorder;
+      let audioChunks = [];
+      let recording = false;
+
+      async function toggleRecording() {
+        if (!recording) {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+          });
+
+          mediaRecorder = new MediaRecorder(stream);
+
+          audioChunks = [];
+
+          mediaRecorder.ondataavailable = (event) => {
+            audioChunks.push(event.data);
+          };
+
+          mediaRecorder.start();
+
+          recording = true;
+
+          document.querySelector(".mic-btn").innerText = "⏹";
+        } else {
+          mediaRecorder.stop();
+
+          mediaRecorder.onstop = async () => {
+            const blob = new Blob(audioChunks);
+
+            const formData = new FormData();
+            formData.append("file", blob, "audio.wav");
+
+            const res = await fetch("/speech", {
+              method: "POST",
+              body: formData,
+            });
+
+            const data = await res.json();
+
+            document.getElementById("input").value = data.text;
+          };
+
+          recording = false;
+
+          document.querySelector(".mic-btn").innerText = "🎤";
+        }
+      }
+
+      document
+        .getElementById("input")
+        .addEventListener("keydown", function (e) {
+          if (e.key === "Enter") {
+            this.form.submit();
+          }
+        });
+    </script>
   </body>
 </html>
-
-<script>
-  let mediaRecorder;
-  let audioChunks = [];
-
-  async function startRecording() {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream);
-
-    mediaRecorder.ondataavailable = (event) => {
-      audioChunks.push(event.data);
-    };
-
-    mediaRecorder.start();
-  }
-
-  function stopRecording() {
-    mediaRecorder.stop();
-
-    mediaRecorder.onstop = async () => {
-      const blob = new Blob(audioChunks);
-      audioChunks = [];
-
-      const formData = new FormData();
-      formData.append("file", blob, "audio.wav");
-
-      const res = await fetch("/speech", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await res.json();
-      document.getElementById("input").value = data.text;
-    };
-  }
-</script>
