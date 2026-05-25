@@ -1,5 +1,3 @@
-# ex: 
-# create_event("Meeting", "2026-04-25 14:00")
 import re
 from ics import Calendar, Event
 from datetime import datetime, timedelta
@@ -79,7 +77,6 @@ def _load_calendar():
                 merged.events.update(cal.events)
             return merged
         raise
-
 
 def create_event(title, start, end=None, description=None):
     calendar = _load_calendar()

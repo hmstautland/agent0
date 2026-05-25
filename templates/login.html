@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Agent 0 Login</title>
+
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <canvas id="starfield"></canvas>
+
+    <div class="main-container">
+      <div class="logo">Agent 0</div>
+
+      <form method="post" action="/login" class="chat-form">
+        <input
+          type="password"
+          name="password"
+          placeholder="Enter password"
+          autofocus
+        />
+
+        <button type="submit" class="send-btn">➜</button>
+      </form>
+
+      {% if error %}
+      <div class="error-card">{{ error }}</div>
+      {% endif %}
+    </div>
+
+    <script src="/static/starfield.js"></script>
+  </body>
+</html>

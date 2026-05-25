@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Agent 0 Logout</title>
+
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <canvas id="starfield"></canvas>
+
+    <div class="main-container">
+      <div class="logo">Agent 0</div>
+      <section>
+        Once logged out you will not be able to store any data. (Not that you
+        currently can, but it's a ticket!)
+      </section>
+      <form method="post" action="/logout" class="chat-form">
+        <button type="submit" class="send-btn">➜</button>
+      </form>
+
+      {% if error %}
+      <div class="error-card">{{ error }}</div>
+      {% endif %}
+    </div>
+
+    <script src="/static/starfield.js"></script>
+  </body>
+</html>
