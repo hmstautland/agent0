@@ -5,7 +5,7 @@ from os import getenv
 
 from agent import run_agent, run_agent_local
 from core.permission import PermissionRequired
-from fastapi import FastAPI, Request, Form, UploadFile, File, APIRouter
+from fastapi import FastAPI, Depends, Request, Form, UploadFile, File, APIRouter, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -20,43 +20,37 @@ PASSWORD = getenv("APP_LOGIN_PASSWORD")
 
 app = FastAPI()
 
-# Login - instead of checking each page, group them
-# async def verify_logged_in():
-#     # Replace with your actual logic (session check, JWT, etc.)
-#     is_logged_in = False 
-#     if not is_logged_in:
-#         raise HTTPException(status_code=401, detail="Not logged in")
 
-
-# public_router = APIRouter()
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
 
 app.add_middleware(
     SessionMiddleware,
     secret_key="THIS_SECRET"
 )
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
-
 # check if logged in
-def is_logged_in(request: Request):
-    return request.session.get("authenticated") == True
+async def is_logged_in(request: Request):
+    if not request.session.get("authenticated") == True:    
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return request
 
-@app.get("/", response_class=HTMLResponse)
-def home(request: Request):
-    if not is_logged_in(request):
+public_router = APIRouter()
+
+@public_router.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    if not await is_logged_in(request):
         return RedirectResponse(url="/login", status_code=303)
     
     return templates.TemplateResponse(name="index.html",request=request,context={"response":""})
 
-
-@app.get("/login")
+@public_router.get("/login")
 def login_page(request: Request):
     return templates.TemplateResponse(name="login.html", request=request, context={
         "error": None
     })
 
-@app.post("/login")
+@public_router.post("/login")
 async def login(request: Request, password: str = Form(...)):
 
     if password == PASSWORD:
@@ -67,22 +61,52 @@ async def login(request: Request, password: str = Form(...)):
         "error": "Invalid password"
     })
 
-@app.get("/logout")
+# Catch-all route for undefined paths
+@public_router.get("/{full_path:path}")
+async def catch_all(request: Request, full_path: str):
+    # If logged in, redirect to home; otherwise to login
+    if request.session.get("authenticated") == True:
+        return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(url="/login", status_code=303)
+    
+# Private
+protected_router = APIRouter(dependencies=[Depends(is_logged_in)])
+
+@protected_router.get("/ask")
+async def ask_get(request: Request):
+    # Redirect GET requests to / with error message
+    return templates.TemplateResponse(name="index.html", request=request, context={
+        "response": "",
+        "error": "You need to provide 'input' to ask the agent"
+    })
+
+@protected_router.get("/logout")
+def logout_page(request: Request):
+     return templates.TemplateResponse(name="logout.html", request=request, context={
+        "error": None
+    })
+
+@protected_router.post("/logout")
 def logout(request: Request):
     request.session.clear()
     return RedirectResponse(url="/login", status_code=303)
 
-@app.post("/ask")
+
+@protected_router.post("/ask")
 async def ask(request: Request):
     try:
         form = await request.form()
         user_input = form.get("input")
+
+        if user_input == "":
+            return RedirectResponse(url="/", status_code=303)
 
         # # move calendar logic out to calendar.py and import here
         # Shortcut: if user asked to see their calendar, bypass LLM and show structured events
         lu = (user_input or "").lower()
         if "calendar" in lu and ("show" in lu or "my calendar" in lu or "what's on" in lu or "what is on" in lu):
             events = read_calendar()
+
             # If asking for today, filter to today's date
             if "today" in lu:
                 today = datetime.now().date()
@@ -248,7 +272,7 @@ async def ask(request: Request):
             "error": str(e)
         })
     
-@app.post("/speech")
+@protected_router.post("/speech")
 async def speech(file: UploadFile = File(...)):
     temp_path = "local_storage/temp.wav"
 
@@ -258,3 +282,21 @@ async def speech(file: UploadFile = File(...)):
     text = transcribe_audio(temp_path)
 
     return {"text": text}
+
+@protected_router.get("/speech")
+async def speech_get(request: Request):
+    # Redirect GET requests to / with error message
+    return templates.TemplateResponse(name="index.html", request=request, context={
+        "response": "",
+        "error": "You need to provide audio input to the speech endpoint"
+    })
+
+# Exception handler to redirect on 401 (not authenticated)
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    if exc.status_code == 401:
+        return RedirectResponse(url="/login", status_code=303)
+    raise exc
+
+app.include_router(public_router)
+app.include_router(protected_router)
