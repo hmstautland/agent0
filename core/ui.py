@@ -1,26 +1,76 @@
+import shutil
+from tools.calendar import read_calendar, _parse_datetime
+from tools.registry import TOOLS
+from os import getenv
+
 from agent import run_agent, run_agent_local
 from core.permission import PermissionRequired
-from fastapi import UploadFile, File
-import shutil
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request, Form, UploadFile, File, APIRouter
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from core.speech_to_text import transcribe_audio
 from fastapi.staticfiles import StaticFiles
-from tools.registry import TOOLS
-import tools.calendar as calmod
+from core.speech_to_text import transcribe_audio
 from datetime import datetime
-
+from starlette.middleware.sessions import SessionMiddleware
+from dotenv import load_dotenv
 import json
 
+load_dotenv()
+PASSWORD = getenv("APP_LOGIN_PASSWORD")
+
 app = FastAPI()
+
+# Login - instead of checking each page, group them
+# async def verify_logged_in():
+#     # Replace with your actual logic (session check, JWT, etc.)
+#     is_logged_in = False 
+#     if not is_logged_in:
+#         raise HTTPException(status_code=401, detail="Not logged in")
+
+
+# public_router = APIRouter()
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key="THIS_SECRET"
+)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
+# check if logged in
+def is_logged_in(request: Request):
+    return request.session.get("authenticated") == True
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
+    if not is_logged_in(request):
+        return RedirectResponse(url="/login", status_code=303)
+    
     return templates.TemplateResponse(name="index.html",request=request,context={"response":""})
+
+
+@app.get("/login")
+def login_page(request: Request):
+    return templates.TemplateResponse(name="login.html", request=request, context={
+        "error": None
+    })
+
+@app.post("/login")
+async def login(request: Request, password: str = Form(...)):
+
+    if password == PASSWORD:
+        request.session["authenticated"] = True
+        return RedirectResponse(url="/", status_code=303)
+
+    return templates.TemplateResponse(name="login.html", request=request, context={
+        "error": "Invalid password"
+    })
+
+@app.get("/logout")
+def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse(url="/login", status_code=303)
 
 @app.post("/ask")
 async def ask(request: Request):
@@ -28,10 +78,11 @@ async def ask(request: Request):
         form = await request.form()
         user_input = form.get("input")
 
+        # # move calendar logic out to calendar.py and import here
         # Shortcut: if user asked to see their calendar, bypass LLM and show structured events
         lu = (user_input or "").lower()
         if "calendar" in lu and ("show" in lu or "my calendar" in lu or "what's on" in lu or "what is on" in lu):
-            events = calmod.read_calendar()
+            events = read_calendar()
             # If asking for today, filter to today's date
             if "today" in lu:
                 today = datetime.now().date()
@@ -57,7 +108,7 @@ async def ask(request: Request):
                 day = int(m.group(1))
                 month_str = m.group(2)
                 try:
-                    dt = calmod._parse_datetime(f"{day} {month_str}")
+                    dt = _parse_datetime(f"{day} {month_str}")
                     def _event_date2(ev):
                         d = ev.get("date")
                         if hasattr(d, "date") and callable(d.date):
