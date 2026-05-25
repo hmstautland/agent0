@@ -4,6 +4,8 @@ cd /d C:\AI\projects\agent0
 
 call .\venv\Scripts\activate.bat
 
-uvicorn core.ui:app --reload
+start /min ollama serve
+
+uvicorn core.ui:app --host 0.0.0.0 --port 8000
 
 pause
