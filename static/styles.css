@@ -50,6 +50,7 @@ body {
 
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
 
   background: rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(12px);
@@ -66,7 +67,8 @@ body {
 }
 
 .chat-form input {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
 
   background: transparent;
   border: none;
@@ -86,6 +88,7 @@ body {
 
 .icon-btn,
 .send-btn {
+  flex-shrink: 0;
   border: none;
   background: transparent;
   color: white;
@@ -105,7 +108,8 @@ body {
 }
 
 .response-card,
-.error-card {
+.error-card,
+.status-card {
   width: 100%;
   max-width: 850px;
 
@@ -122,11 +126,16 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.status-card pre,
 .response-card pre,
 .error-card pre {
   white-space: pre-wrap;
   word-wrap: break-word;
   color: white;
+}
+
+.hidden {
+  display: none;
 }
 
 .error-card {

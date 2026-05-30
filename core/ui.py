@@ -1,18 +1,20 @@
 import shutil
 from tools.calendar import read_calendar, _parse_datetime
 from tools.registry import TOOLS
+from tools.notes import parse_note_command, save_note_text
 from os import getenv
 
-from agent import run_agent, run_agent_local
+from agent import run_agent, run_agent_local, stream_agent
 from core.permission import PermissionRequired
 from fastapi import FastAPI, Depends, Request, Form, UploadFile, File, APIRouter, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from core.speech_to_text import transcribe_audio
 from datetime import datetime
 from starlette.middleware.sessions import SessionMiddleware
 from dotenv import load_dotenv
+from types import GeneratorType
 import json
 
 load_dotenv()
@@ -22,7 +24,50 @@ app = FastAPI()
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/favicon", StaticFiles(directory="favicon"), name="favicon")
+
 templates = Jinja2Templates(directory="templates")
+
+
+def normalize_stream_value(value):
+    if isinstance(value, dict):
+        return {str(k): normalize_stream_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [normalize_stream_value(v) for v in value]
+    if isinstance(value, GeneratorType):
+        return [normalize_stream_value(v) for v in value]
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
+def serialize_stream_event(event):
+    filtered = normalize_stream_value(event)
+    return json.dumps(filtered, default=str)
+
+
+def render_index(request: Request, **context):
+    return templates.TemplateResponse(name="index.html", request=request, context=context)
+
+
+def parse_permission_args(permission_args):
+    if not permission_args:
+        return None
+    try:
+        return json.loads(permission_args)
+    except Exception:
+        return permission_args
+
+
+def create_permission_decisions(form):
+    permission_decision = form.get("permission_decision")
+    permission_action = form.get("permission_action")
+
+    if permission_decision is None or permission_action is None:
+        return {}
+
+    decision = permission_decision in ("y", "external")
+    return {permission_action: decision}
 
 app.add_middleware(
     SessionMiddleware,
@@ -98,8 +143,19 @@ async def ask(request: Request):
         form = await request.form()
         user_input = form.get("input")
 
-        if user_input == "":
-            return RedirectResponse(url="/", status_code=303)
+        if not user_input:
+            return templates.TemplateResponse(name="index.html", request=request, context={
+                "response": "",
+                "error": "You need to provide 'input' to ask the agent"
+            })
+
+        note_text = parse_note_command(user_input)
+        if note_text is not None:
+            note_file = save_note_text(note_text, source="text")
+            return templates.TemplateResponse(name="index.html", request=request, context={
+                "response": f"Note saved to {note_file}",
+                "error": None
+            })
 
         # # move calendar logic out to calendar.py and import here
         # Shortcut: if user asked to see their calendar, bypass LLM and show structured events
@@ -177,54 +233,40 @@ async def ask(request: Request):
 
         permission_decision = form.get("permission_decision")
         permission_action = form.get("permission_action")
-        permission_args = form.get("permission_args")
+        permission_args = parse_permission_args(form.get("permission_args"))
         permission_risk = form.get("permission_risk")
-
-        if permission_args:
-            try:
-                permission_args = json.loads(permission_args)
-            except Exception:
-                pass
-
-        permission_decisions = None
 
         if permission_decision == "local":
             response = run_agent_local(user_input, permission_action, permission_args, permission_risk)
             
             # Check if response is a fallback dict
             if isinstance(response, dict) and response.get("fallback_to_external"):
-                return templates.TemplateResponse(name="index.html", request=request, context={
-                    "response": response.get("message"),
-                    "fallback_permission": {
+                return render_index(request,
+                    response=response.get("message"),
+                    fallback_permission={
                         "action": response.get("permission_action"),
                         "args": response.get("permission_args"),
                         "risk": response.get("permission_risk"),
                     },
-                    "input": user_input,
-                })
+                    input=user_input,
+                )
         else:
-            # Build a decisions map for web flow. Use empty dict to signal web UI
-            # so request_permission raises PermissionRequired instead of prompting.
-            permission_decisions = {}
-            if permission_decision is not None and permission_action is not None:
-                decision = permission_decision in ("y", "external")
-                permission_decisions = {permission_action: decision}
+            permission_decisions = create_permission_decisions(form)
 
             try:
                 response = run_agent(user_input, permission_decisions=permission_decisions)
             except PermissionRequired as pr:
-                # Render UI asking for permission approval
-                return templates.TemplateResponse(name="index.html", request=request, context={
-                    "response": "",
-                    "permission": {
+                return render_index(request,
+                    response="",
+                    permission={
                         "action": pr.action,
                         "args": json.dumps(pr.args),
                         "risk": pr.risk,
                         "reason": pr.reason,
                         "external": TOOLS.get(pr.action, {}).get("external", False),
                     },
-                    "input": user_input,
-                })
+                    input=user_input,
+                )
 
         calendar_data = None
 
@@ -271,7 +313,97 @@ async def ask(request: Request):
             "response": "",
             "error": str(e)
         })
-    
+
+@protected_router.post("/ask_stream")
+async def ask_stream(request: Request):
+    form = await request.form()
+    user_input = form.get("input")
+
+    if not user_input:
+        async def error_gen():
+            yield json.dumps({"event": "error", "message": "You need to provide 'input' to ask the agent"}) + "\n"
+        return StreamingResponse(error_gen(), media_type="application/x-ndjson")
+
+    note_text = parse_note_command(user_input)
+    if note_text is not None:
+        note_file = save_note_text(note_text, source="text")
+        async def note_gen():
+            yield json.dumps({"event": "final_response", "response": f"Note saved to {note_file}"}) + "\n"
+        return StreamingResponse(note_gen(), media_type="application/x-ndjson")
+
+    lu = (user_input or "").lower()
+    if "calendar" in lu and ("show" in lu or "my calendar" in lu or "what's on" in lu or "what is on" in lu):
+        events = read_calendar()
+        if "today" in lu:
+            today = datetime.now().date()
+            def _event_date(ev):
+                d = ev.get("date")
+                if hasattr(d, "date") and callable(d.date):
+                    return d.date()
+                if isinstance(d, datetime):
+                    return d.date()
+                if hasattr(d, "naive"):
+                    try:
+                        return d.naive.date()
+                    except Exception:
+                        pass
+                return None
+
+            events = [e for e in events if _event_date(e) == today]
+
+        import re
+        m = re.search(r"(\b\d{1,2}\b)\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*", lu)
+        if m:
+            day = int(m.group(1))
+            month_str = m.group(2)
+            try:
+                dt = _parse_datetime(f"{day} {month_str}")
+                def _event_date2(ev):
+                    d = ev.get("date")
+                    if hasattr(d, "date") and callable(d.date):
+                        return d.date()
+                    if isinstance(d, datetime):
+                        return d.date()
+                    if hasattr(d, "naive"):
+                        try:
+                            return d.naive.date()
+                        except Exception:
+                            pass
+                    return None
+
+                events = [e for e in events if _event_date2(e) == dt.date()]
+            except Exception:
+                pass
+
+        def _to_dt(x):
+            if hasattr(x, "naive"):
+                try:
+                    return x.naive
+                except Exception:
+                    pass
+            if hasattr(x, "datetime"):
+                try:
+                    return x.datetime
+                except Exception:
+                    pass
+            return x
+
+        for e in events:
+            if "date" in e:
+                e["date"] = _to_dt(e["date"])
+            if "end" in e:
+                e["end"] = _to_dt(e["end"])
+
+        async def calendar_gen():
+            yield json.dumps({"event": "final_response", "response": "Calendar query completed.", "calendar_data": events}) + "\n"
+        return StreamingResponse(calendar_gen(), media_type="application/x-ndjson")
+
+    async def event_stream():
+        for message in stream_agent(user_input):
+            yield serialize_stream_event(message) + "\n"
+
+    return StreamingResponse(event_stream(), media_type="application/x-ndjson")
+
 @protected_router.post("/speech")
 async def speech(file: UploadFile = File(...)):
     temp_path = "local_storage/temp.wav"
@@ -280,6 +412,10 @@ async def speech(file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, buffer)
 
     text = transcribe_audio(temp_path)
+    note_text = parse_note_command(text)
+    if note_text is not None:
+        note_file = save_note_text(note_text, source="speech")
+        return {"text": text, "note_saved": note_file}
 
     return {"text": text}
 
@@ -298,5 +434,5 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         return RedirectResponse(url="/login", status_code=303)
     raise exc
 
-app.include_router(public_router)
 app.include_router(protected_router)
+app.include_router(public_router)

@@ -26,17 +26,17 @@
     <div class="main-container">
       <h1 class="logo">Agent 0</h1>
 
-      <form method="post" action="/ask" class="chat-form">
+      <form id="main-chat-form" method="post" action="/ask" class="chat-form">
         <button type="button" class="icon-btn add-btn">+</button>
         <input
           type="text"
           name="input"
           id="input"
-          placeholder="Ask something"
+          placeholder="007 is on a break so..."
           autocomplete="on"
         />
 
-        <button type="submit" class="send-btn">Send ➜</button>
+        <button type="submit" class="send-btn">➜</button>
         <button
           type="button"
           class="icon-btn mic-btn"
@@ -46,8 +46,59 @@
         </button>
       </form>
 
+      <div id="stream-status" class="status-card hidden">
+        <h3>Status</h3>
+        <pre id="status-log"></pre>
+      </div>
+
+      <div id="stream-card" class="response-card hidden">
+        <h3>Assistant Thinking</h3>
+        <pre id="stream-output"></pre>
+      </div>
+
+      <div id="stream-error" class="error-card hidden">
+        <h3 style="color: red">Error :</h3>
+        <pre id="stream-error-text"></pre>
+      </div>
+
+      <section
+        id="stream-permission"
+        class="permission-card hidden"
+        style="border: 1px solid #f99; padding: 12px; margin-top: 20px"
+      >
+        <h3 style="color: darkorange">Permission Required</h3>
+        <p><strong>Action:</strong> <span id="perm-action"></span></p>
+        <p><strong>Risk:</strong> <span id="perm-risk"></span></p>
+        <p><strong>Reason:</strong> <span id="perm-reason"></span></p>
+        <p><strong>Arguments:</strong></p>
+        <pre id="perm-args"></pre>
+
+        <form id="stream-permission-form" method="post" action="/ask">
+          <input type="hidden" name="input" id="perm-input" value="" />
+          <input
+            type="hidden"
+            name="permission_action"
+            id="perm-action-field"
+            value=""
+          />
+          <input
+            type="hidden"
+            name="permission_args"
+            id="perm-args-field"
+            value=""
+          />
+          <input
+            type="hidden"
+            name="permission_risk"
+            id="perm-risk-field"
+            value=""
+          />
+          <div id="perm-buttons"></div>
+        </form>
+      </section>
+
       {% if response %}
-      <div class="response-card">
+      <div id="server-response-card" class="response-card">
         <h3>Response :</h3>
 
         <pre>{{ response }}</pre>
@@ -185,11 +236,156 @@
         }
       }
 
+      const chatForm = document.getElementById("main-chat-form");
+      const statusCard = document.getElementById("stream-status");
+      const statusLog = document.getElementById("status-log");
+      const streamCard = document.getElementById("stream-card");
+      const streamOutput = document.getElementById("stream-output");
+      const streamError = document.getElementById("stream-error");
+      const streamErrorText = document.getElementById("stream-error-text");
+      const responseCard = document.getElementById("server-response-card");
+
+      function showStatus(message) {
+        statusCard.classList.remove("hidden");
+        statusLog.textContent += `${message}\n`;
+        statusLog.scrollTop = statusLog.scrollHeight;
+      }
+
+      function clearStreamUI() {
+        statusLog.textContent = "";
+        streamOutput.textContent = "";
+        streamErrorText.textContent = "";
+        statusCard.classList.add("hidden");
+        streamCard.classList.add("hidden");
+        streamError.classList.add("hidden");
+      }
+
+      async function showPermissionRequest(eventData) {
+        const permSection = document.getElementById("stream-permission");
+        const permAction = document.getElementById("perm-action");
+        const permRisk = document.getElementById("perm-risk");
+        const permReason = document.getElementById("perm-reason");
+        const permArgs = document.getElementById("perm-args");
+        const permInput = document.getElementById("perm-input");
+        const permActionField = document.getElementById("perm-action-field");
+        const permArgsField = document.getElementById("perm-args-field");
+        const permRiskField = document.getElementById("perm-risk-field");
+        const permButtons = document.getElementById("perm-buttons");
+
+        permAction.textContent = eventData.action;
+        permRisk.textContent = eventData.risk;
+        permReason.textContent = eventData.reason || "No reason provided.";
+        permArgs.textContent = JSON.stringify(eventData.args || {}, null, 2);
+
+        permInput.value = eventData.input || "";
+        permActionField.value = eventData.action;
+        permArgsField.value = JSON.stringify(eventData.args || {});
+        permRiskField.value = eventData.risk;
+
+        permButtons.innerHTML = "";
+
+        if (eventData.external) {
+          permButtons.innerHTML = `
+            <button type="submit" name="permission_decision" value="local">Try local LLM first</button>
+            <button type="submit" name="permission_decision" value="y">Use external tools</button>
+            <button type="submit" name="permission_decision" value="n">Reject</button>
+          `;
+        } else {
+          permButtons.innerHTML = `
+            <button type="submit" name="permission_decision" value="y">Approve</button>
+            <button type="submit" name="permission_decision" value="n">Reject</button>
+          `;
+        }
+
+        permSection.classList.remove("hidden");
+      }
+
+      async function handleAskStream(formData) {
+        clearStreamUI();
+        streamCard.classList.remove("hidden");
+        responseCard?.classList.add("hidden");
+        document.getElementById("stream-permission").classList.add("hidden");
+
+        const res = await fetch("/ask_stream", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!res.body) {
+          showStatus("LLM stream not available.");
+          return;
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = "";
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split("\n");
+          buffer = lines.pop();
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            let event;
+            try {
+              event = JSON.parse(line);
+            } catch (error) {
+              console.error("Stream parse error", error, line);
+              continue;
+            }
+
+            if (event.event === "status") {
+              showStatus(event.message);
+            } else if (event.event === "llm_chunk") {
+              streamOutput.textContent += event.text;
+            } else if (event.event === "final_response") {
+              streamOutput.textContent += event.response || "";
+            } else if (event.event === "error") {
+              streamErrorText.textContent = event.message || "Unknown error";
+              streamError.classList.remove("hidden");
+            } else if (event.event === "permission_required") {
+              showPermissionRequest(event);
+            }
+          }
+        }
+
+        if (buffer.trim()) {
+          try {
+            const event = JSON.parse(buffer);
+            if (event.event === "status") {
+              showStatus(event.message);
+            } else if (event.event === "llm_chunk") {
+              streamOutput.textContent += event.text;
+            } else if (event.event === "final_response") {
+              streamOutput.textContent += event.response || "";
+            } else if (event.event === "error") {
+              streamErrorText.textContent = event.message || "Unknown error";
+              streamError.classList.remove("hidden");
+            } else if (event.event === "permission_required") {
+              showPermissionRequest(event);
+            }
+          } catch (error) {
+            console.error("Stream parse error", error, buffer);
+          }
+        }
+      }
+
+      chatForm.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const formData = new FormData(chatForm);
+        await handleAskStream(formData);
+      });
+
       document
         .getElementById("input")
         .addEventListener("keydown", function (e) {
           if (e.key === "Enter") {
-            this.form.submit();
+            e.preventDefault();
+            chatForm.requestSubmit();
           }
         });
     </script>

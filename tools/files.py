@@ -14,8 +14,17 @@ def get_project_structure():
 
     return structure
 
-def search_files(keyword=None, query=None):
-    term = keyword or query
+def search_files(keyword=None, query=None, keywords=None, **kwargs):
+    # Accept multiple possible parameter names from LLM-decided arguments
+    # 'keywords' may be a list or a string; 'keyword' and 'query' kept for backward compatibility
+    term = None
+    if keywords:
+        # if keywords is a list, join with spaces, else use as string
+        if isinstance(keywords, (list, tuple)):
+            term = " ".join([str(k) for k in keywords if k])
+        else:
+            term = str(keywords)
+    term = term or keyword or query
 
     if not term:
         return "No search term provided"

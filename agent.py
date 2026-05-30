@@ -5,7 +5,7 @@ from core.llm import query_llm
 from core.speech_to_text import listen
 from config.system_prompt import SYSTEM_PROMPT
 from core.logger import log_event
-from core.permission import request_permission
+from core.permission import request_permission, PermissionRequired
 from tools.registry import TOOLS
 
 # 🔁 Agent Flow
@@ -101,6 +101,108 @@ def run_agent(user_input, permission_decisions=None):
         context += f"\nStep {step}:\nAction: {action}\nResult: {result}\n"
 
     return "Max steps reached without conclusion."
+
+
+def stream_agent(user_input, permission_decisions=None):
+    log_event({"type": "user_input", "input": user_input, "stream": True})
+    context = f"User request: {user_input}\n"
+    
+    # Initialize empty decisions map for web flow (triggers PermissionRequired for UI)
+    if permission_decisions is None:
+        permission_decisions = {}
+    
+    yield {"event": "status", "message": "Starting agent..."}
+
+    MAX_STEPS = 5
+    for step in range(MAX_STEPS):
+        tool_prompt = build_tool_prompt()
+        decision_prompt = f"""
+        {SYSTEM_PROMPT}
+
+        Available tools:
+        {tool_prompt}
+
+        {context}
+        """
+
+        yield {"event": "status", "message": f"Step {step + 1}: asking the LLM for next action..."}
+        raw_chunks = []
+        for chunk in query_llm(decision_prompt, stream=True):
+            raw_chunks.append(chunk)
+            yield {"event": "llm_chunk", "text": chunk}
+
+        raw = "".join(raw_chunks).strip()
+        log_event({"type": "llm_raw_decision", "raw": raw, "stream": True})
+
+        yield {"event": "status", "message": "LLM decision complete."}
+
+        if not raw:
+            yield {"event": "error", "message": "LLM returned no decision."}
+            return
+
+        try:
+            decision = json.loads(raw)
+        except Exception:
+            yield {"event": "final_response", "response": raw}
+            return
+
+        action = decision.get("action")
+        yield {"event": "status", "message": f"LLM chose action: {action}"}
+
+        # Final answer - no more action needed
+        if action == "none":
+            yield {"event": "final_response", "response": decision.get("response")}
+            return
+
+        tool = TOOLS.get(action)
+        if not tool:
+            yield {"event": "error", "message": f"Unknown action: {action}"}
+            return
+
+        args = decision.get("arguments", {})
+        yield {"event": "status", "message": f"Requesting permission for tool: {action}"}
+
+        try:
+            approved = request_permission(action, args, tool["risk"], decisions=permission_decisions, reason=decision.get("reason"))
+        except PermissionRequired as pr:
+            yield {
+                "event": "permission_required",
+                "action": pr.action,
+                "args": pr.args,
+                "risk": pr.risk,
+                "reason": pr.reason,
+                "external": TOOLS.get(pr.action, {}).get("external", False),
+                "input": user_input,
+            }
+            return
+        except Exception as e:
+            yield {"event": "error", "message": str(e)}
+            return
+
+        if not approved:
+            yield {"event": "final_response", "response": "Action denied"}
+            return
+
+        yield {"event": "status", "message": f"Executing tool: {action}"}
+        result = execute_tool(action, args)
+
+        try:
+            result_preview = result if isinstance(result, str) else json.dumps(result, default=str)
+        except Exception:
+            result_preview = str(result)
+
+        log_event({
+            "type": "tool_execution",
+            "step": step,
+            "action": action,
+            "args": args,
+            "result": result_preview[:500]
+        })
+
+        yield {"event": "status", "message": f"Tool {action} completed."}
+        context += f"\nStep {step}:\nAction: {action}\nResult: {result}\n"
+
+    yield {"event": "final_response", "response": "Max steps reached without conclusion."}
 
 
 def run_agent_local(user_input, permission_action=None, permission_args=None, permission_risk=None):
