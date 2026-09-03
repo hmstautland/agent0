@@ -87,6 +87,13 @@ agent0/
 
 ## 1. Activate Virtual Environment
 
+### Linux(CatchyOS)
+```
+python -m venv venv
+source venv/bin/activate.fish 
+(or look in folder if using other terminals)
+```
+
 ### PowerShell:
 
 ```
