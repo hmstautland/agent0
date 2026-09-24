@@ -108,11 +108,46 @@ venv\Scripts\activate.bat
 
 ---
 
+## Install
+```
+pip install -r requirements.txt
+```
+
 ## 2. Start Ollama
 
+Ollama runs one server that serves every model you have pulled - the model is
+chosen per request by the agent, not by the server. So start the server and pull
+the two models the agent uses (`ollama run <model>` is only an interactive chat
+client and is not needed by the app):
+
 ```
-ollama run mistral
+ollama serve            # usually already running as a service
+ollama pull qwen3:4b          # light, for direct answers
+ollama pull qwen3-coder:30b   # heavy, for file/code work
 ```
+
+### Model settings (environment variables)
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `OLLAMA_MODEL` | `qwen3:8b` | Light model for direct answers (the local-first step) |
+| `OLLAMA_CODE_MODEL` | `qwen3-coder:30b` | Heavier model used once a request escalates to the tool loop (reading/editing files) |
+| `OLLAMA_NUM_CTX` | `16384` | Context window. Ollama's own default is 4096, which is too small to hold a source file plus the instructions - the overflow is silently dropped and the model starts replying with prose or invented tool names |
+| `OLLAMA_TIMEOUT` | `600` | Request timeout in seconds |
+
+Override either one per shell, for example to run everything on the light model:
+
+```
+set -x OLLAMA_CODE_MODEL qwen3:4b   # fish
+```
+
+Measured on a Ryzen AI Max+ 395 (CPU only), which is why `qwen3:4b` is the
+default over `mistral:7b`:
+
+| model | generation | prompt eval | admits it needs the file tools |
+| --- | --- | --- | --- |
+| `qwen3:4b` | 34 tok/s | 206 tok/s | yes |
+| `mistral:7b` | 24 tok/s | 100 tok/s | no - invents an answer instead |
 
 ---
 

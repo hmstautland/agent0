@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
 
 # Virtual environments
 .env
@@ -20,8 +21,14 @@ build/
 
 # Unit test / coverage reports
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .tox/
 .coverage
+.tox/
+.nox/
+.coverage
+.coverage.*
 htmlcov/
 
 # Local configuration & environment variables
@@ -39,3 +46,12 @@ local_storage/
 .vscode/
 .idea/
 
+# Large model or media files
+*.csv
+*.parquet
+*.pkl
+*.pickle
+*.onnx
+*.bin
+*.mp4
+*.zip

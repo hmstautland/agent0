@@ -108,9 +108,8 @@ body {
 }
 
 .response-card,
-.error-card,
-.status-card {
-  width: 100%;
+.error-card {
+  width: auto;
   max-width: 850px;
 
   margin-top: 30px;
@@ -126,12 +125,18 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.status-card pre,
 .response-card pre,
 .error-card pre {
   white-space: pre-wrap;
   word-wrap: break-word;
   color: white;
+}
+
+.thinking-img {
+  display: relative;
+  max-width: min(30vw, 100%);
+  height: auto;
+  margin: 10px auto;
 }
 
 .hidden {
@@ -147,29 +152,24 @@ table {
   margin-top: 20px;
   width: 100%;
   border-collapse: collapse;
-  color: rgba(255, 255, 255, 0.08);
+  color: white;
 }
 
 th,
 td {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: left;
 }
 
 th {
   padding: 1rem;
-  background: #f4f4f4;
-  text-align: left;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 td {
-  padding: 0.5rem;
+  padding: 0.5rem 1rem;
 }
 
-tr {
-  background: #fafafa;
-}
-
-tr:nth-child(even) {
-  color: #fafafa;
-  background: rgba(255, 255, 255, 0.08);
+tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.03);
 }

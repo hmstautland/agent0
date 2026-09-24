@@ -16,8 +16,23 @@ TOOLS = {
     },
     "write_file": {
         "func": "tools.files.write_file",
-        "description": "Write content to a file in the project",
+        "description": "Write content to a file in the project (replaces the whole file - needs the full new content)",
         "risk": "high"
+    },
+    "edit_file": {
+        "func": "tools.files.edit_file",
+        "description": "Replace an exact snippet in a file, arguments: path, old_text, new_text. Prefer this over write_file when changing part of a file",
+        "risk": "high"
+    },
+    "extract_inline_scripts": {
+        "func": "tools.files.extract_inline_scripts",
+        "description": "Move inline <script> code out of an HTML file into a .js file and link it with <script src>. Arguments: path, optional dest (defaults to static/<name>.js). Use this for 'no scripts defined in the html' requests - it moves the code instead of deleting it",
+        "risk": "high"
+    },
+    "verify_app": {
+        "func": "tools.verify.verify_app",
+        "description": "Check nothing is broken after editing: compiles templates, resolves includes, checks referenced /static and /media files exist, imports the app. Takes no arguments. Run this after changing templates or static files",
+        "risk": "low"
     },
 
     "get_news": {
@@ -36,12 +51,6 @@ TOOLS = {
         "func": "tools.web.read_web_content",
         "description": "Read and extract textual content from web pages (list of URLs)",
         "risk": "medium",
-        "external": 1
-    },
-    "read_email": {
-        "func": "tools.email.read_email",
-        "description": "Read latest emails",
-        "risk": "high",
         "external": 1
     },
     "create_calendar_event": {
