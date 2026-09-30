@@ -8,6 +8,7 @@ from core.auth import is_logged_in
 from core.permission import PermissionRequired
 from core.streaming import serialize_stream_event
 from core.templates import templates
+from tools.audio import describe_play_result, parse_play_command, play_audio_file
 from tools.calendar import create_event, get_calendar_view, is_calendar_show_command, parse_create_command
 from tools.notes import parse_note_command, save_note_text
 
@@ -48,6 +49,19 @@ def shortcut_text_response(user_input):
     return None
 
 
+def audio_play_result(user_input):
+    """Handle "play ..." requests directly - same reasoning as
+    shortcut_text_response: the local model isn't reliable at recognizing
+    this needs the audio tool. Returns the play_audio_file() result dict, or
+    None if user_input isn't a play request.
+    """
+    play_args = parse_play_command(user_input)
+    if play_args is None:
+        return None
+
+    return play_audio_file(**play_args)
+
+
 @agent_router.get("/ask")
 async def ask_get(request: Request):
     # Redirect GET requests to / with error message
@@ -74,6 +88,16 @@ async def ask(request: Request):
             return templates.TemplateResponse(name="index.html", request=request, context={
                 "response": shortcut,
                 "calendar_data": None
+            })
+
+        # Shortcut: "play ..." requests, bypass the LLM and hand the web UI a
+        # concrete file to play, or candidates to choose between
+        audio_result = audio_play_result(user_input)
+        if audio_result is not None:
+            return templates.TemplateResponse(name="index.html", request=request, context={
+                "response": describe_play_result(audio_result),
+                "calendar_data": None,
+                "audio_data": audio_result,
             })
 
         # Shortcut: if user asked to see their calendar, bypass LLM and show structured events
@@ -129,6 +153,16 @@ async def ask_stream(request: Request):
         async def shortcut_gen():
             yield serialize_stream_event({"event": "final_response", "response": shortcut}) + "\n"
         return StreamingResponse(shortcut_gen(), media_type="application/x-ndjson")
+
+    audio_result = audio_play_result(user_input)
+    if audio_result is not None:
+        async def audio_gen():
+            yield serialize_stream_event({
+                "event": "final_response",
+                "response": describe_play_result(audio_result),
+                "audio": audio_result,
+            }) + "\n"
+        return StreamingResponse(audio_gen(), media_type="application/x-ndjson")
 
     if is_calendar_show_command(user_input):
         async def calendar_gen():

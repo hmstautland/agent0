@@ -8,6 +8,7 @@ const streamHeading = document.getElementById("stream-heading");
 const thinkingImg = document.getElementById("thinking-img");
 const streamOutput = document.getElementById("stream-output");
 const streamCalendar = document.getElementById("stream-calendar");
+const streamAudio = document.getElementById("stream-audio");
 const streamError = document.getElementById("stream-error");
 const streamErrorText = document.getElementById("stream-error-text");
 const responseCard = document.getElementById("server-response-card");
@@ -24,9 +25,11 @@ function clearStreamUI() {
   streamOutput.textContent = "";
   streamErrorText.textContent = "";
   streamCalendar.innerHTML = "";
+  streamAudio.innerHTML = "";
   thinkingImg.classList.add("hidden");
   streamCard.classList.add("hidden");
   streamCalendar.classList.add("hidden");
+  streamAudio.classList.add("hidden");
   streamError.classList.add("hidden");
 }
 
@@ -119,6 +122,7 @@ function handleStreamEvent(event) {
       streamCard.classList.add("hidden");
     }
     renderCalendarTable(event.calendar_data);
+    renderAudioResult(event.audio);
   } else if (event.event === "error") {
     thinkingImg.classList.add("hidden");
     streamErrorText.textContent = event.message || "Unknown error";

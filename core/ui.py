@@ -1,20 +1,24 @@
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
-from dotenv import load_dotenv
 
 from core.agent_routes import agent_router
 from core.auth import logout_router, public_router
 from core.speech_routes import speech_router
-
-load_dotenv()
+from core.text_to_speech import AUDIO_DIR
 
 app = FastAPI()
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/favicon", StaticFiles(directory="favicon"), name="favicon")
 app.mount("/media", StaticFiles(directory="media"), name="media")
+# Generated speech audio - AUDIO_DIR is created at import time in text_to_speech.py
+app.mount("/audio", StaticFiles(directory=str(AUDIO_DIR)), name="audio")
 
 app.add_middleware(
     SessionMiddleware,

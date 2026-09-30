@@ -8,6 +8,7 @@ from config.system_prompt import SYSTEM_PROMPT
 from core.logger import log_event
 from core.permission import request_permission, PermissionRequired
 from tools.registry import TOOLS
+from tools.audio import describe_play_result, parse_play_command, play_audio_file
 from tools.calendar import create_event, parse_create_command
 from tools.files import parse_script_refactor_command
 
@@ -174,6 +175,16 @@ def _run_steps(user_input, permission_decisions):
     if calendar_command is not None:
         result = create_event(**calendar_command)
         yield {"event": "final_response", "response": f"{result}\n\nWould you like to see your calendar?"}
+        return
+
+    # Bypass the LLM for "play ..." requests - same reasoning as the calendar
+    # bypass above. The result also carries structured "audio" data the web
+    # UI needs (which file to load, or which candidates to offer); the CLI
+    # just ignores that part and prints the text.
+    play_args = parse_play_command(user_input)
+    if play_args is not None:
+        result = play_audio_file(**play_args)
+        yield {"event": "final_response", "response": describe_play_result(result), "audio": result}
         return
 
     if needs_tools(user_input):

@@ -62,5 +62,10 @@ TOOLS = {
         "func": "tools.calendar.read_calendar",
         "description": "Read local calendar events",
         "risk": "low"
+    },
+    "play_audio_file": {
+        "func": "tools.audio.play_audio_file",
+        "description": "Find and play a saved audio file from local_storage/audio by (partial) filename - e.g. 'my-music' matches 'my-holiday-music.mp3'. Pass a bare number to pick from the candidates a previous call returned (e.g. after several files matched). Never guess a filename - call this to search.",
+        "risk": "low"
     }
 }

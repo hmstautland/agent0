@@ -72,3 +72,65 @@ def test_ui_permission_flow(monkeypatch):
 
     assert response2.status_code == 200
     assert "Team sync" in response2.text or "Response" in response2.text
+
+
+def test_play_command_bypasses_llm_and_returns_audio_data(monkeypatch):
+    monkeypatch.setattr(auth_mod, "PASSWORD", "testpass")
+
+    def fail_if_llm_called(prompt, model=None):
+        raise AssertionError("play requests must bypass the LLM entirely")
+
+    monkeypatch.setattr(agent_mod, "query_llm", fail_if_llm_called)
+    monkeypatch.setattr(
+        "core.agent_routes.play_audio_file",
+        lambda **kwargs: {"status": "play", "filename": "my-holiday-music.mp3", "audio_url": "/audio/my-holiday-music.mp3"},
+    )
+
+    client = TestClient(app)
+    client.post("/login", data={"password": "testpass"})
+
+    response = client.post("/ask", data={"input": "play my-holiday-music.mp3"})
+
+    assert response.status_code == 200
+    assert "Playing my-holiday-music.mp3" in response.text
+    assert "my-holiday-music.mp3" in response.text  # rendered into the audio_data component
+
+
+def test_play_command_choose_renders_number_buttons(monkeypatch):
+    monkeypatch.setattr(auth_mod, "PASSWORD", "testpass")
+    monkeypatch.setattr(
+        "core.agent_routes.play_audio_file",
+        lambda **kwargs: {
+            "status": "choose",
+            "candidates": [
+                {"number": 1, "filename": "my-holiday-music.mp3", "audio_url": "/audio/my-holiday-music.mp3"},
+                {"number": 2, "filename": "my-other-music.mp3", "audio_url": "/audio/my-other-music.mp3"},
+            ],
+        },
+    )
+
+    client = TestClient(app)
+    client.post("/login", data={"password": "testpass"})
+
+    response = client.post("/ask", data={"input": "play music"})
+
+    assert response.status_code == 200
+    assert "play number 1" in response.text
+    assert "play number 2" in response.text
+
+
+def test_play_command_via_stream_yields_audio_field(monkeypatch):
+    monkeypatch.setattr(auth_mod, "PASSWORD", "testpass")
+    monkeypatch.setattr(
+        "core.agent_routes.play_audio_file",
+        lambda **kwargs: {"status": "play", "filename": "a.wav", "audio_url": "/audio/a.wav"},
+    )
+
+    client = TestClient(app)
+    client.post("/login", data={"password": "testpass"})
+
+    response = client.post("/ask_stream", data={"input": "play a.wav"})
+    event = json.loads(response.text.strip())
+
+    assert event["event"] == "final_response"
+    assert event["audio"] == {"status": "play", "filename": "a.wav", "audio_url": "/audio/a.wav"}

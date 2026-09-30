@@ -46,6 +46,10 @@ local_storage/
 .vscode/
 .idea/
 
+# Downloaded model files (e.g. Piper voices)
+models/
+audio/
+
 # Large model or media files
 *.csv
 *.parquet

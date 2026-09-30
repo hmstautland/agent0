@@ -185,6 +185,86 @@ pause
 
 ---
 
+# 🗣️ Text-to-Speech (Kokoro-82M)
+
+The TTS dashboard (open it via the 🗣️ icon in the chat bar) generates speech
+with [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M), an 82M-parameter
+open-weight TTS model.
+
+### FFmpeg (for MP3 / OGG output)
+
+WAV and FLAC are produced natively (no external tools, via `soundfile`). MP3
+and OGG/Opus are encoded from that WAV with `ffmpeg`, which must be on
+`PATH`:
+
+```
+sudo pacman -S ffmpeg      # Arch / CachyOS
+sudo apt install ffmpeg    # Debian/Ubuntu
+```
+
+## CPU / CUDA configuration
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `TTS_DEVICE` | `auto` | `auto` picks CUDA if available, otherwise CPU. Set to `cpu` or `cuda` to force one. |
+| `KOKORO_CACHE_DIR` | `models/kokoro` | Where Kokoro's downloaded model weights are cached. |
+
+Each accent's model is loaded once, on first use, and
+reused for every request after that - it is never reloaded per-request.
+
+## Model cache behavior
+
+On first use of an accent, Kokoro downloads its weights from Hugging Face
+into `KOKORO_CACHE_DIR` (`models/kokoro` by default). Every request after
+that is fully offline.
+
+## Available voices
+
+Only British English voices from the official Kokoro-82M voice pack are
+offered (`GET /tts/voices` lists them):
+
+- **Female:** Alice, Emma, Isabella, Lily
+- **Male:** Daniel, Fable, George, Lewis
+
+## Two-speaker dialogue
+
+Enable "Two-speaker dialogue" in the TTS dashboard to turn a script into a
+conversation between two voices in one audio file (`POST /tts/dialogue`,
+taking `text`, `voice_a`, `voice_b`, `speed`, `output_format`).
+
+Prefix every line of the input with `A:` or `B:` to mark who's speaking:
+
+```
+A: Have you tried the new coffee place?
+B: Not yet, is it any good?
+A: Really good, you should go.
+```
+
+Each line is synthesized with its speaker's selected voice and the turns are
+concatenated with a short silence gap between them. Consecutive lines from
+the same speaker are merged into one turn; a line with no `A:`/`B:` prefix is
+rejected with a clear error. The dashboard defaults Speaker A to Isabella and
+Speaker B to George.
+
+## Converting an existing file
+
+The dashboard's "Convert an existing file" drop zone (drag a file in, or
+click to browse) re-encodes an existing WAV/MP3/FLAC/OGG file to a different
+format without running Kokoro at all (`POST /tts/convert`, taking `file` and
+`output_format`) - useful when you already have the audio you want and only
+need a different format. Uploads are capped at 100MB and converted via
+`ffmpeg`, so it requires the same `ffmpeg` install as MP3/OGG generation
+above.
+
+## License and attribution
+
+Kokoro-82M's weights and inference code are released by
+[hexgrad](https://huggingface.co/hexgrad) under the **Apache License 2.0**.
+This project uses the `kokoro`/`misaki` packages and the model weights
+unmodified under that license - see the
+[model card](https://huggingface.co/hexgrad/Kokoro-82M) for full terms.
+
+
 # 🔄 Switching Ollama Models
 
 ## Pull a new model
@@ -242,10 +322,9 @@ MODEL = "llama3:8b"
 
 # ⚠️ Known Limitations
 
-- Small models may hallucinate code
-- Tool arguments may need normalization
 - No persistent memory yet
 - No true web browsing (search + summarize only)
+
 
 ---
 
