@@ -3,7 +3,7 @@ import json
 import requests
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral:7b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral:latest")
 
 
 def query_llm(prompt, stream=False):
@@ -14,21 +14,7 @@ def query_llm(prompt, stream=False):
     }
 
     if stream:
-        response = requests.post(OLLAMA_URL, json=payload, stream=True, timeout=120)
-        response.raise_for_status()
-
-        for line in response.iter_lines(decode_unicode=True):
-            if not line:
-                continue
-            try:
-                chunk = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-
-            text = chunk.get("response")
-            if text is not None:
-                yield text
-        return
+        return _stream_llm_response(payload)
 
     response = requests.post(OLLAMA_URL, json=payload, timeout=120)
     response.raise_for_status()
@@ -37,3 +23,20 @@ def query_llm(prompt, stream=False):
     if isinstance(body, dict):
         return body.get("response") or body.get("text") or json.dumps(body)
     return str(body)
+
+
+def _stream_llm_response(payload):
+    response = requests.post(OLLAMA_URL, json=payload, stream=True, timeout=120)
+    response.raise_for_status()
+
+    for line in response.iter_lines(decode_unicode=True):
+        if not line:
+            continue
+        try:
+            chunk = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        text = chunk.get("response")
+        if text is not None:
+            yield text

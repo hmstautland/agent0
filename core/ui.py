@@ -1,5 +1,6 @@
+import re
 import shutil
-from tools.calendar import read_calendar, _parse_datetime
+from features.calendar.calendar import events_in_month, is_calendar_event_list, _parse_datetime
 from tools.registry import TOOLS
 from tools.notes import parse_note_command, save_note_text
 from os import getenv
@@ -23,6 +24,13 @@ PASSWORD = getenv("APP_LOGIN_PASSWORD")
 app = FastAPI()
 
 
+# The calendar feature's CSS/JS live with its backend logic under
+# features/calendar/ rather than in the shared static/ directory - only its
+# static/ subfolder is mounted, so calendar.py itself is never served over
+# HTTP. Must be mounted before the broader /static mount below - Starlette
+# matches mounts in registration order, so the more specific prefix has to
+# come first or /static would shadow every /static/calendar/* request.
+app.mount("/static/calendar", StaticFiles(directory="features/calendar/static"), name="calendar_static")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/favicon", StaticFiles(directory="favicon"), name="favicon")
 
@@ -57,6 +65,46 @@ def parse_permission_args(permission_args):
         return json.loads(permission_args)
     except Exception:
         return permission_args
+
+
+def _event_iso(value):
+    """Normalize an ics Arrow (or plain datetime) into an ISO string for JSON."""
+    if hasattr(value, "naive"):
+        try:
+            return value.naive.isoformat()
+        except Exception:
+            pass
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def _calendar_target_month(user_input: str):
+    """Pick which (year, month) a "show my calendar" chat message means.
+
+    Defaults to the current month; a mentioned day+month (e.g. "17 may")
+    opens whichever month contains that date instead.
+    """
+    target = datetime.now()
+
+    m = re.search(
+        r"(\b\d{1,2}\b)\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*",
+        (user_input or "").lower(),
+    )
+    if m:
+        try:
+            target = _parse_datetime(f"{m.group(1)} {m.group(2)}")
+        except Exception:
+            pass
+
+    return target.year, target.month
+
+
+def is_calendar_request(user_input: str) -> bool:
+    lu = (user_input or "").lower()
+    return "calendar" in lu and (
+        "show" in lu or "my calendar" in lu or "what's on" in lu or "what is on" in lu
+    )
 
 
 def create_permission_decisions(form):
@@ -125,6 +173,28 @@ async def ask_get(request: Request):
         "error": "You need to provide 'input' to ask the agent"
     })
 
+@protected_router.get("/calendar/month")
+async def calendar_month(year: int = None, month: int = None):
+    now = datetime.now()
+    year = year or now.year
+    month = month if month and 1 <= month <= 12 else now.month
+
+    events = events_in_month(year, month)
+
+    return {
+        "year": year,
+        "month": month,
+        "events": [
+            {
+                "name": e["name"],
+                "start": _event_iso(e["date"]),
+                "end": _event_iso(e["end"]),
+                "description": e["description"],
+            }
+            for e in events
+        ],
+    }
+
 @protected_router.get("/logout")
 def logout_page(request: Request):
      return templates.TemplateResponse(name="logout.html", request=request, context={
@@ -157,78 +227,14 @@ async def ask(request: Request):
                 "error": None
             })
 
-        # # move calendar logic out to calendar.py and import here
-        # Shortcut: if user asked to see their calendar, bypass LLM and show structured events
-        lu = (user_input or "").lower()
-        if "calendar" in lu and ("show" in lu or "my calendar" in lu or "what's on" in lu or "what is on" in lu):
-            events = read_calendar()
-
-            # If asking for today, filter to today's date
-            if "today" in lu:
-                today = datetime.now().date()
-                def _event_date(ev):
-                    d = ev.get("date")
-                    if hasattr(d, "date") and callable(d.date):
-                        return d.date()
-                    if isinstance(d, datetime):
-                        return d.date()
-                    if hasattr(d, "naive"):
-                        try:
-                            return d.naive.date()
-                        except Exception:
-                            pass
-                    return None
-
-                events = [e for e in events if _event_date(e) == today]
-
-            # If asking for a specific day like 'may 17', try to parse and filter
-            import re
-            m = re.search(r"(\b\d{1,2}\b)\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*", lu)
-            if m:
-                day = int(m.group(1))
-                month_str = m.group(2)
-                try:
-                    dt = _parse_datetime(f"{day} {month_str}")
-                    def _event_date2(ev):
-                        d = ev.get("date")
-                        if hasattr(d, "date") and callable(d.date):
-                            return d.date()
-                        if isinstance(d, datetime):
-                            return d.date()
-                        if hasattr(d, "naive"):
-                            try:
-                                return d.naive.date()
-                            except Exception:
-                                pass
-                        return None
-
-                    events = [e for e in events if _event_date2(e) == dt.date()]
-                except Exception:
-                    pass
-
-            # Normalize date objects to datetimes for the template
-            def _to_dt(x):
-                if hasattr(x, "naive"):
-                    try:
-                        return x.naive
-                    except Exception:
-                        pass
-                if hasattr(x, "datetime"):
-                    try:
-                        return x.datetime
-                    except Exception:
-                        pass
-                return x
-
-            for e in events:
-                if "date" in e:
-                    e["date"] = _to_dt(e["date"])
-                if "end" in e:
-                    e["end"] = _to_dt(e["end"])
-
+        # Shortcut: if the user asked to see their calendar, bypass the LLM
+        # and open the month-grid calendar view (templates/index.html),
+        # which fetches its own data from GET /calendar/month.
+        if is_calendar_request(user_input):
+            year, month = _calendar_target_month(user_input)
             return templates.TemplateResponse(name="index.html", request=request, context={
                 "response": "",
-                "calendar_data": events,
+                "calendar_month": {"year": year, "month": month},
             })
 
         permission_decision = form.get("permission_decision")
@@ -268,44 +274,27 @@ async def ask(request: Request):
                     input=user_input,
                 )
 
-        calendar_data = None
+        # run_agent() returns a raw calendar event list as-is (rather than
+        # text-summarizing it) when the LLM calls read_calendar itself -
+        # open the month-grid view on whichever month the first event falls
+        # in, instead of rendering the raw list as text.
+        calendar_month = None
 
-        if isinstance(response, list) and response:
+        if is_calendar_event_list(response):
             first = response[0]
-            if isinstance(first, dict) and "date" in first and "end" in first:
-                calendar_data = response
-                response = ""
-
-        if isinstance(response, dict) and response.get("events"):
-            calendar_data = response["events"]
+            calendar_month = {"year": first["date"].year, "month": first["date"].month}
+            response = ""
+        elif isinstance(response, dict) and is_calendar_event_list(response.get("events")):
+            first = response["events"][0]
+            calendar_month = {"year": first["date"].year, "month": first["date"].month}
             response = ""
 
         if not isinstance(response, str):
             response = json.dumps(response, indent=2)
-        # Normalize calendar_data dates if present
-        def _to_dt(x):
-            if hasattr(x, "naive"):
-                try:
-                    return x.naive
-                except Exception:
-                    pass
-            if hasattr(x, "datetime"):
-                try:
-                    return x.datetime
-                except Exception:
-                    pass
-            return x
 
-        if calendar_data:
-            for e in calendar_data:
-                if "date" in e:
-                    e["date"] = _to_dt(e["date"])
-                if "end" in e:
-                    e["end"] = _to_dt(e["end"])
-
-        return templates.TemplateResponse(name="index.html", request=request, context={    
+        return templates.TemplateResponse(name="index.html", request=request, context={
             "response": str(response),
-            "calendar_data": calendar_data
+            "calendar_month": calendar_month,
         })
     
     except Exception as e:
@@ -331,71 +320,15 @@ async def ask_stream(request: Request):
             yield json.dumps({"event": "final_response", "response": f"Note saved to {note_file}"}) + "\n"
         return StreamingResponse(note_gen(), media_type="application/x-ndjson")
 
-    lu = (user_input or "").lower()
-    if "calendar" in lu and ("show" in lu or "my calendar" in lu or "what's on" in lu or "what is on" in lu):
-        events = read_calendar()
-        if "today" in lu:
-            today = datetime.now().date()
-            def _event_date(ev):
-                d = ev.get("date")
-                if hasattr(d, "date") and callable(d.date):
-                    return d.date()
-                if isinstance(d, datetime):
-                    return d.date()
-                if hasattr(d, "naive"):
-                    try:
-                        return d.naive.date()
-                    except Exception:
-                        pass
-                return None
-
-            events = [e for e in events if _event_date(e) == today]
-
-        import re
-        m = re.search(r"(\b\d{1,2}\b)\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*", lu)
-        if m:
-            day = int(m.group(1))
-            month_str = m.group(2)
-            try:
-                dt = _parse_datetime(f"{day} {month_str}")
-                def _event_date2(ev):
-                    d = ev.get("date")
-                    if hasattr(d, "date") and callable(d.date):
-                        return d.date()
-                    if isinstance(d, datetime):
-                        return d.date()
-                    if hasattr(d, "naive"):
-                        try:
-                            return d.naive.date()
-                        except Exception:
-                            pass
-                    return None
-
-                events = [e for e in events if _event_date2(e) == dt.date()]
-            except Exception:
-                pass
-
-        def _to_dt(x):
-            if hasattr(x, "naive"):
-                try:
-                    return x.naive
-                except Exception:
-                    pass
-            if hasattr(x, "datetime"):
-                try:
-                    return x.datetime
-                except Exception:
-                    pass
-            return x
-
-        for e in events:
-            if "date" in e:
-                e["date"] = _to_dt(e["date"])
-            if "end" in e:
-                e["end"] = _to_dt(e["end"])
+    if is_calendar_request(user_input):
+        year, month = _calendar_target_month(user_input)
 
         async def calendar_gen():
-            yield json.dumps({"event": "final_response", "response": "Calendar query completed.", "calendar_data": events}) + "\n"
+            yield json.dumps({
+                "event": "final_response",
+                "response": "",
+                "show_calendar": {"year": year, "month": month},
+            }) + "\n"
         return StreamingResponse(calendar_gen(), media_type="application/x-ndjson")
 
     async def event_stream():

@@ -34,8 +34,12 @@ body {
 }
 
 .logo {
-  font-size: 48px;
-  margin-bottom: 30px;
+  position: fixed;
+  top: 20px;
+  left: 24px;
+  z-index: 1;
+
+  font-size: 32px;
   font-weight: bold;
 
   background: linear-gradient(90deg, #fff, #999);
@@ -124,6 +128,13 @@ body {
   backdrop-filter: blur(10px);
 
   border: 1px solid rgba(255, 255, 255, 0.08);
+
+  /* .main-container centers its children in a fixed-height column; a card
+     taller than the viewport would otherwise push earlier content (the
+     input, nav buttons) above scroll range entirely. Scrolling inside the
+     card instead keeps everything else reachable. */
+  max-height: 70vh;
+  overflow-y: auto;
 }
 
 .status-card pre,
@@ -134,42 +145,14 @@ body {
   color: white;
 }
 
+/* !important so this always wins regardless of where a later, equally
+   specific single-class rule (e.g. ".calendar-card { display: flex }")
+   happens to sit in the file - without it, cascade order alone decides,
+   and a component's own display rule can silently defeat .hidden. */
 .hidden {
-  display: none;
+  display: none !important;
 }
 
 .error-card {
   border: 1px solid rgba(255, 0, 0, 0.3);
-}
-
-/* CALENDAR */
-table {
-  margin-top: 20px;
-  width: 100%;
-  border-collapse: collapse;
-  color: rgba(255, 255, 255, 0.08);
-}
-
-th,
-td {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-th {
-  padding: 1rem;
-  background: #f4f4f4;
-  text-align: left;
-}
-
-td {
-  padding: 0.5rem;
-}
-
-tr {
-  background: #fafafa;
-}
-
-tr:nth-child(even) {
-  color: #fafafa;
-  background: rgba(255, 255, 255, 0.08);
 }

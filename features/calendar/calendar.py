@@ -118,3 +118,42 @@ def read_calendar():
         })
 
     return events
+
+
+def is_calendar_event_list(value):
+    """True if value looks like read_calendar()'s event-list return shape.
+
+    Used to recognize a read_calendar tool result regardless of which code
+    path produced it (the chat shortcut, or the LLM choosing the tool
+    itself), so it can be shown as the month-grid calendar instead of being
+    flattened into a text summary.
+    """
+    return (
+        isinstance(value, list)
+        and bool(value)
+        and isinstance(value[0], dict)
+        and "date" in value[0]
+        and "end" in value[0]
+    )
+
+
+def events_in_month(year, month):
+    """Events whose start falls in the given (year, month), always a list.
+
+    Unlike read_calendar(), this never returns the "No events found." string
+    sentinel - callers (the month-grid calendar view) just want an empty
+    list to render a blank month.
+    """
+    calendar = _load_calendar()
+
+    events = []
+    for event in sorted(calendar.events, key=lambda e: e.begin):
+        if event.begin.year == year and event.begin.month == month:
+            events.append({
+                "name": event.name,
+                "date": event.begin,
+                "end": event.end,
+                "description": event.description
+            })
+
+    return events

@@ -45,12 +45,12 @@ TOOLS = {
         "external": 1
     },
     "create_calendar_event": {
-        "func": "tools.calendar.create_event",
+        "func": "features.calendar.calendar.create_event",
         "description": "Create a calendar event with title, start, and optional end time",
         "risk": "medium"
     },
     "read_calendar": {
-        "func": "tools.calendar.read_calendar",
+        "func": "features.calendar.calendar.read_calendar",
         "description": "Read local calendar events",
         "risk": "low"
     }

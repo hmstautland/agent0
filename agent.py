@@ -6,6 +6,7 @@ from core.speech_to_text import listen
 from config.system_prompt import SYSTEM_PROMPT
 from core.logger import log_event
 from core.permission import request_permission, PermissionRequired
+from features.calendar.calendar import is_calendar_event_list
 from tools.registry import TOOLS
 
 # 🔁 Agent Flow
@@ -96,6 +97,12 @@ def run_agent(user_input, permission_decisions=None):
             "args": args,
             "result": result_preview[:500]
         })
+
+        # A calendar event list is shown as the month-grid calendar, not fed
+        # back to the LLM for a text summary - return it as-is so the caller
+        # (core/ui.py's /ask) can recognize the shape and render it.
+        if is_calendar_event_list(result):
+            return result
 
       # Feed result back into context
         context += f"\nStep {step}:\nAction: {action}\nResult: {result}\n"
@@ -200,6 +207,19 @@ def stream_agent(user_input, permission_decisions=None):
         })
 
         yield {"event": "status", "message": f"Tool {action} completed."}
+
+        # A calendar event list is shown as the month-grid calendar, not fed
+        # back to the LLM for a text summary (see run_agent for the
+        # non-streaming equivalent).
+        if is_calendar_event_list(result):
+            first = result[0]
+            yield {
+                "event": "final_response",
+                "response": "",
+                "show_calendar": {"year": first["date"].year, "month": first["date"].month},
+            }
+            return
+
         context += f"\nStep {step}:\nAction: {action}\nResult: {result}\n"
 
     yield {"event": "final_response", "response": "Max steps reached without conclusion."}
