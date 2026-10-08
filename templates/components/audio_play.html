@@ -1,0 +1,19 @@
+{% if audio_data.status == "play" %}
+<div class="audio-play-card">
+  <audio controls autoplay src="{{ audio_data.audio_url }}"></audio>
+  <p class="audio-play-filename">{{ audio_data.filename }}</p>
+</div>
+{% elif audio_data.status == "choose" %}
+<div class="audio-play-card">
+  <div class="audio-choice-list">
+    {% for candidate in audio_data.candidates %}
+    <form method="post" action="/ask" class="audio-choice-form">
+      <input type="hidden" name="input" value="play number {{ candidate.number }}" />
+      <button type="submit" class="audio-choice-btn">
+        {{ candidate.number }}. {{ candidate.filename }}
+      </button>
+    </form>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}

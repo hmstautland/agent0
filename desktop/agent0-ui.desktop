@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Agent 0 UI
+Comment=Start the Agent 0 web UI (uvicorn --reload)
+Exec=/home/hms/Desktop/Source/agent0/desktop/start_agent_ui.fish
+Icon=/home/hms/Desktop/Source/agent0/favicon/web-app-manifest-512x512.png
+Terminal=true
+Categories=Development;
+StartupNotify=true
