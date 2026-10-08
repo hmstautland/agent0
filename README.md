@@ -246,6 +246,38 @@ the same speaker are merged into one turn; a line with no `A:`/`B:` prefix is
 rejected with a clear error. The dashboard defaults Speaker A to Isabella and
 Speaker B to George.
 
+## Speaking a document
+
+Drag a `.txt`, `.md`/`.markdown` or `.docx` file onto the dashboard's text
+box - or click the "Browse…" button next to its label - to fill it with that
+file's text (`POST /tts/extract-text`, taking `file`), no copy-pasting
+needed. Legacy `.doc` isn't supported (there's no good pure-Python reader
+for it); save as `.docx` instead. Uploads are capped at 20MB.
+
+For `.md`/`.markdown` files, Markdown syntax is flattened to plain,
+speakable text first - headings, bold/italic markers, inline code
+backticks, link brackets, list bullets, blockquote markers and horizontal
+rules are all stripped (keeping their content) so Kokoro reads "Architecture"
+instead of "hash hash Architecture". This only applies to `.md` uploads, not
+typed/pasted text, since a bare `#` or `*` there is as likely to be a
+hashtag or literal emphasis as Markdown - and it never touches characters
+with no Markdown meaning, such as `@` in an email address.
+
+## Naming a generated file
+
+The optional "Title / store as" field above the text box sets the generated
+file's name (`POST /tts` and `/tts/dialogue` both take an optional `title`).
+It's sanitized for the filesystem and deduplicated against existing files
+(`My Clip.wav`, `My Clip_2.wav`, ...), so two generations never overwrite
+each other. Leave it blank and the file is named `tts_<date>_<time>`
+(minute precision) instead.
+
+Generating no longer autoplays the result - a dialog pops up once the audio
+is ready, showing the file it was saved as (read-only, for confirmation) with
+a "Play now" button. The player and download link below the text box are
+also populated either way, so you can grab the file without opening the
+dialog.
+
 ## Converting an existing file
 
 The dashboard's "Convert an existing file" drop zone (drag a file in, or

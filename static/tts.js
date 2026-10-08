@@ -138,6 +138,72 @@ function initConvertDropZone() {
   });
 }
 
+async function extractTextIntoTextarea(file) {
+  if (!file) return;
+
+  const textArea = document.getElementById("tts-text");
+  const error = document.getElementById("tts-error");
+
+  error.classList.add("hidden");
+  const originalPlaceholder = textArea.placeholder;
+  textArea.disabled = true;
+  textArea.placeholder = "Extracting text…";
+
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const res = await fetch("/tts/extract-text", {
+      method: "POST",
+      body: formData,
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      error.textContent = data.error || "Could not extract text from that file.";
+      error.classList.remove("hidden");
+      return;
+    }
+
+    textArea.value = data.text;
+  } catch (err) {
+    error.textContent = "Could not extract text from that file.";
+    error.classList.remove("hidden");
+  } finally {
+    textArea.disabled = false;
+    textArea.placeholder = originalPlaceholder;
+  }
+}
+
+function initTextDropZone() {
+  const textArea = document.getElementById("tts-text");
+
+  textArea.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    textArea.classList.add("tts-textarea-drop-active");
+  });
+
+  textArea.addEventListener("dragleave", () => {
+    textArea.classList.remove("tts-textarea-drop-active");
+  });
+
+  textArea.addEventListener("drop", (e) => {
+    e.preventDefault();
+    textArea.classList.remove("tts-textarea-drop-active");
+    extractTextIntoTextarea(e.dataTransfer.files[0]);
+  });
+}
+
+function initTextBrowse() {
+  const fileInput = document.getElementById("tts-text-file");
+
+  fileInput.addEventListener("change", () => {
+    extractTextIntoTextarea(fileInput.files[0]);
+    fileInput.value = ""; // allow re-picking the same file later
+  });
+}
+
 function toggleTtsDashboard() {
   const dashboard = document.getElementById("tts-dashboard");
   const btn = document.querySelector(".tts-btn");
@@ -157,6 +223,7 @@ function toggleTtsDashboard() {
 
 async function generateSpeech() {
   const textArea = document.getElementById("tts-text");
+  const titleInput = document.getElementById("tts-title");
   const voiceSelect = document.getElementById("tts-dash-voice");
   const voiceASelect = document.getElementById("tts-voice-a");
   const voiceBSelect = document.getElementById("tts-voice-b");
@@ -199,6 +266,7 @@ async function generateSpeech() {
     formData.append("text", text);
     formData.append("speed", speed.value);
     formData.append("output_format", format.value);
+    if (titleInput.value.trim()) formData.append("title", titleInput.value.trim());
 
     let endpoint = "/tts";
     if (isDialogue) {
@@ -228,10 +296,7 @@ async function generateSpeech() {
     link.textContent = `Download ${format.value.toUpperCase()}`;
 
     player.classList.remove("hidden");
-    // Ignore rejection here - browsers can block autoplay-with-sound
-    // (especially after the await above breaks the user-gesture chain),
-    // but the file is fine and the visible native controls still work.
-    audio.play().catch(() => {});
+    showResultDialog(data.filename);
   } catch (err) {
     error.textContent = "Speech generation failed.";
     error.classList.remove("hidden");
@@ -239,6 +304,34 @@ async function generateSpeech() {
     btn.disabled = false;
     btn.textContent = originalLabel;
   }
+}
+
+function showResultDialog(filename) {
+  const dialog = document.getElementById("tts-result-dialog");
+  const titleField = document.getElementById("tts-result-title");
+  const playBtn = document.getElementById("tts-result-play-btn");
+
+  titleField.value = filename;
+
+  // Reassigning .onclick (rather than addEventListener) means each call
+  // replaces the previous handler instead of stacking a new one.
+  playBtn.onclick = () => {
+    document.getElementById("tts-audio").play().catch(() => {});
+    dialog.close();
+  };
+
+  dialog.showModal();
+}
+
+function initResultDialog() {
+  const dialog = document.getElementById("tts-result-dialog");
+
+  // A click on the ::backdrop still lands on the <dialog> element itself
+  // (its content is in child elements), so this is a reliable "close on
+  // click outside" check.
+  dialog.addEventListener("click", (e) => {
+    if (e.target === dialog) dialog.close();
+  });
 }
 
 async function convertFile() {
@@ -338,8 +431,17 @@ async function searchSavedAudio() {
   const query = document.getElementById("tts-play-search").value.trim();
   const results = document.getElementById("tts-play-results");
 
+  // Deliberately don't fall back to listing every saved file here - that's
+  // only wanted for the chat "play ..." tool's own disambiguation (see
+  // tools/audio.find_audio_files), not for this panel, which should stay
+  // empty until the user actually searches for something.
+  if (!query) {
+    results.innerHTML = "";
+    return;
+  }
+
   try {
-    const res = await fetch(`/tts/files${query ? `?q=${encodeURIComponent(query)}` : ""}`);
+    const res = await fetch(`/tts/files?q=${encodeURIComponent(query)}`);
     const data = await res.json();
     renderSavedAudioResults(data.files);
   } catch (err) {
@@ -350,7 +452,9 @@ async function searchSavedAudio() {
 loadVoices();
 initTtsControls();
 initConvertDropZone();
-searchSavedAudio();
+initTextDropZone();
+initTextBrowse();
+initResultDialog();
 
 document.getElementById("tts-play-search").addEventListener("keydown", (e) => {
   if (e.key === "Enter") {

@@ -196,6 +196,51 @@ body {
   justify-content: space-between;
 }
 
+.tts-title-input {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  color: white;
+  font-size: 14px;
+  padding: 10px 14px;
+}
+
+.tts-title-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.tts-text-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.tts-text-label-row label {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.tts-browse-btn {
+  flex-shrink: 0;
+
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 14px;
+
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 10px;
+
+  transition: 0.2s;
+}
+
+.tts-browse-btn:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+  color: white;
+}
+
 .tts-textarea {
   width: 100%;
   resize: vertical;
@@ -213,6 +258,15 @@ body {
 
 .tts-textarea::placeholder {
   color: rgba(255, 255, 255, 0.5);
+}
+
+.tts-textarea.tts-textarea-drop-active {
+  border-color: white;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.tts-textarea:disabled {
+  opacity: 0.6;
 }
 
 .tts-controls-row {
@@ -304,6 +358,60 @@ body {
   opacity: 0.6;
 }
 
+.tts-btn-secondary {
+  background: transparent;
+}
+
+.tts-btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.tts-result-dialog {
+  background: #141414;
+  color: white;
+
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+
+  padding: 24px;
+  max-width: 420px;
+  width: 90vw;
+
+  box-shadow:
+    0 0 40px rgba(255, 255, 255, 0.05),
+    0 0 100px rgba(255, 255, 255, 0.05);
+}
+
+.tts-result-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+}
+
+.tts-result-dialog h3 {
+  margin-bottom: 16px;
+}
+
+#tts-result-title {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  color: white;
+  font-size: 14px;
+  padding: 10px 12px;
+}
+
+.tts-result-dialog-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.tts-result-dialog-actions .tts-generate-btn {
+  flex: 1 1 0;
+  text-align: center;
+}
+
 .tts-player {
   display: flex;
   flex-direction: column;
@@ -327,6 +435,41 @@ body {
 .tts-divider {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   margin: 4px 0;
+}
+
+.tts-collapsible {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+
+.tts-collapsible > summary {
+  cursor: pointer;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.85);
+  list-style: none;
+}
+
+.tts-collapsible > summary::-webkit-details-marker {
+  display: none;
+}
+
+.tts-collapsible > summary::before {
+  content: "▸";
+  display: inline-block;
+  width: 1em;
+  transition: transform 0.15s ease;
+}
+
+.tts-collapsible[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.tts-collapsible-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 12px;
 }
 
 .tts-drop-zone {

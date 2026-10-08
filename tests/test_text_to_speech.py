@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import numpy as np
@@ -177,6 +178,47 @@ def test_synthesize_generates_a_valid_wav_file(monkeypatch, tmp_path):
         assert wav_file.getnframes() == len(samples)
 
 
+# --- user-chosen filename / title ------------------------------------------
+
+def test_build_filename_stem_sanitizes_a_given_title(monkeypatch, tmp_path):
+    monkeypatch.setattr(tts, "AUDIO_DIR", tmp_path)
+
+    assert tts._build_filename_stem("My Weird/Title: v2?") == "My Weird_Title_ v2"
+
+
+def test_build_filename_stem_defaults_to_a_date_time_pattern_when_blank(monkeypatch, tmp_path):
+    monkeypatch.setattr(tts, "AUDIO_DIR", tmp_path)
+
+    stem = tts._build_filename_stem("   ")
+
+    assert re.match(r"^tts_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}$", stem)
+
+
+def test_build_filename_stem_dedupes_against_an_existing_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(tts, "AUDIO_DIR", tmp_path)
+    (tmp_path / "My Title.wav").touch()
+
+    assert tts._build_filename_stem("My Title") == "My Title_2"
+
+
+def test_synthesize_uses_the_given_title_as_the_filename(monkeypatch, tmp_path):
+    monkeypatch.setattr(tts, "AUDIO_DIR", tmp_path)
+    monkeypatch.setattr(tts, "_synthesize_kokoro", lambda text, voice_id, speed: np.zeros(100, dtype="float32"))
+
+    result = tts.synthesize("hello", voice_id="bf_isabella", output_format="wav", title="Weekly Update")
+
+    assert result["filename"] == "Weekly Update.wav"
+
+
+def test_synthesize_falls_back_to_default_name_without_a_title(monkeypatch, tmp_path):
+    monkeypatch.setattr(tts, "AUDIO_DIR", tmp_path)
+    monkeypatch.setattr(tts, "_synthesize_kokoro", lambda text, voice_id, speed: np.zeros(100, dtype="float32"))
+
+    result = tts.synthesize("hello", voice_id="bf_isabella", output_format="wav")
+
+    assert re.match(r"^tts_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}\.wav$", result["filename"])
+
+
 def test_encode_flac_round_trips_the_same_audio(tmp_path):
     import soundfile as sf
 
@@ -324,3 +366,105 @@ def test_convert_audio_file_real_ffmpeg_conversion(tmp_path, monkeypatch):
     data, sr = sf.read(result["path"])
     assert sr == tts.SAMPLE_RATE
     assert len(data) == len(samples)
+
+
+# --- document text extraction (drag-and-drop onto the text box) ------------
+
+def test_extract_text_from_document_reads_plain_txt():
+    import io
+
+    text = tts.extract_text_from_document(io.BytesIO(b"Hello from a text file."), "notes.txt")
+
+    assert text == "Hello from a text file."
+
+
+def test_extract_text_from_document_reads_docx(tmp_path):
+    import docx
+
+    docx_path = tmp_path / "notes.docx"
+    document = docx.Document()
+    document.add_paragraph("First paragraph.")
+    document.add_paragraph("Second paragraph.")
+    document.save(str(docx_path))
+
+    with open(docx_path, "rb") as f:
+        text = tts.extract_text_from_document(f, "notes.docx")
+
+    assert text == "First paragraph.\nSecond paragraph."
+
+
+def test_extract_text_from_document_rejects_legacy_doc():
+    import io
+
+    with pytest.raises(ValueError, match=r"\.doc files aren't supported"):
+        tts.extract_text_from_document(io.BytesIO(b"whatever"), "report.doc")
+
+
+def test_extract_text_from_document_rejects_unsupported_extension():
+    import io
+
+    with pytest.raises(ValueError, match="Unsupported document type"):
+        tts.extract_text_from_document(io.BytesIO(b"whatever"), "report.pdf")
+
+
+def test_extract_text_from_document_rejects_empty_file():
+    import io
+
+    with pytest.raises(ValueError, match="No text found"):
+        tts.extract_text_from_document(io.BytesIO(b"   \n  "), "empty.txt")
+
+
+def test_extract_text_from_document_rejects_corrupt_docx():
+    import io
+
+    with pytest.raises(ValueError, match="Could not read that .docx file"):
+        tts.extract_text_from_document(io.BytesIO(b"not a real docx"), "fake.docx")
+
+
+# --- markdown stripping (.md files only - .txt/pasted text is untouched) ---
+
+def test_strip_markdown_for_speech_strips_headings():
+    assert tts._strip_markdown_for_speech("# Title\n## Subtitle\ntext") == "Title\nSubtitle\ntext"
+
+
+def test_strip_markdown_for_speech_does_not_touch_a_hashtag():
+    # No space after '#' - not a valid ATX heading, so it's left alone.
+    assert tts._strip_markdown_for_speech("#TeamWork is great") == "#TeamWork is great"
+
+
+def test_strip_markdown_for_speech_strips_bold_and_italic():
+    assert tts._strip_markdown_for_speech("**bold** and *italic* and _also italic_") == "bold and italic and also italic"
+
+
+def test_strip_markdown_for_speech_strips_inline_code_and_links():
+    assert tts._strip_markdown_for_speech("See `core/llm.py` or [the docs](https://example.com).") == (
+        "See core/llm.py or the docs."
+    )
+
+
+def test_strip_markdown_for_speech_strips_code_fences():
+    text = "before\n```python\nprint('hi')\n```\nafter"
+    assert tts._strip_markdown_for_speech(text) == "before\nafter"
+
+
+def test_strip_markdown_for_speech_strips_list_markers_and_blockquotes():
+    text = "- first\n- second\n> quoted"
+    assert tts._strip_markdown_for_speech(text) == "first\nsecond\nquoted"
+
+
+def test_strip_markdown_for_speech_strips_horizontal_rules():
+    assert tts._strip_markdown_for_speech("above\n---\nbelow") == "above\nbelow"
+
+
+def test_strip_markdown_for_speech_leaves_email_addresses_alone():
+    assert tts._strip_markdown_for_speech("Contact me at user@example.com please.") == (
+        "Contact me at user@example.com please."
+    )
+
+
+def test_extract_text_from_document_strips_markdown_for_md_files():
+    import io
+
+    text = tts.extract_text_from_document(io.BytesIO(b"# Architecture\n\nSee `agent.py` for details."), "notes.md")
+
+    assert text == "Architecture\n\nSee agent.py for details."

@@ -31,7 +31,7 @@ def test_tts_endpoint_returns_audio_url_on_success(monkeypatch):
     monkeypatch.setattr(
         speech_routes,
         "synthesize",
-        lambda text, voice_id, speed, output_format: {
+        lambda text, voice_id, speed, output_format, title: {
             "path": "/tmp/tts_test.wav",
             "filename": "tts_test.wav",
             "mime_type": "audio/wav",
@@ -46,10 +46,26 @@ def test_tts_endpoint_returns_audio_url_on_success(monkeypatch):
     assert body["mime_type"] == "audio/wav"
 
 
+def test_tts_endpoint_forwards_the_title_field_to_synthesize(monkeypatch):
+    client = _logged_in_client(monkeypatch)
+    calls = []
+
+    def fake_synthesize(text, voice_id, speed, output_format, title):
+        calls.append(title)
+        return {"path": "/tmp/my_clip.wav", "filename": "my_clip.wav", "mime_type": "audio/wav"}
+
+    monkeypatch.setattr(speech_routes, "synthesize", fake_synthesize)
+
+    response = client.post("/tts", data={"text": "hello", "title": "My Clip"})
+
+    assert response.status_code == 200
+    assert calls == ["My Clip"]
+
+
 def test_tts_endpoint_returns_400_on_validation_error(monkeypatch):
     client = _logged_in_client(monkeypatch)
 
-    def raise_value_error(text, voice_id, speed, output_format):
+    def raise_value_error(text, voice_id, speed, output_format, title):
         raise ValueError("Speed must be between 0.5 and 2.0")
 
     monkeypatch.setattr(speech_routes, "synthesize", raise_value_error)
@@ -63,7 +79,7 @@ def test_tts_endpoint_returns_400_on_validation_error(monkeypatch):
 def test_tts_endpoint_returns_500_with_clear_message_when_kokoro_missing(monkeypatch):
     client = _logged_in_client(monkeypatch)
 
-    def raise_runtime_error(text, voice_id, speed, output_format):
+    def raise_runtime_error(text, voice_id, speed, output_format, title):
         raise RuntimeError("Kokoro TTS is not installed. Install it with `pip install kokoro soundfile`.")
 
     monkeypatch.setattr(speech_routes, "synthesize", raise_runtime_error)
@@ -87,7 +103,7 @@ def test_tts_dialogue_endpoint_returns_audio_url_on_success(monkeypatch):
     client = _logged_in_client(monkeypatch)
     calls = []
 
-    def fake_synthesize_dialogue(text, voice_a, voice_b, speed, output_format):
+    def fake_synthesize_dialogue(text, voice_a, voice_b, speed, output_format, title):
         calls.append((text, voice_a, voice_b))
         return {"path": "/tmp/tts_dialogue_test.wav", "filename": "tts_dialogue_test.wav", "mime_type": "audio/wav"}
 
@@ -106,7 +122,7 @@ def test_tts_dialogue_endpoint_returns_audio_url_on_success(monkeypatch):
 def test_tts_dialogue_endpoint_returns_400_for_unlabeled_lines(monkeypatch):
     client = _logged_in_client(monkeypatch)
 
-    def raise_value_error(text, voice_a, voice_b, speed, output_format):
+    def raise_value_error(text, voice_a, voice_b, speed, output_format, title):
         raise ValueError('Each line must start with "A:" or "B:" to mark the speaker - got: "no label here"')
 
     monkeypatch.setattr(speech_routes, "synthesize_dialogue", raise_value_error)
@@ -204,6 +220,59 @@ def test_tts_files_requires_authentication():
     client = TestClient(app)
 
     response = client.get("/tts/files", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
+
+
+def test_tts_extract_text_endpoint_returns_text_on_success(monkeypatch):
+    client = _logged_in_client(monkeypatch)
+    calls = []
+
+    def fake_extract(upload_file_obj, filename):
+        calls.append(filename)
+        return "Extracted text."
+
+    monkeypatch.setattr(speech_routes, "extract_text_from_document", fake_extract)
+
+    response = client.post("/tts/extract-text", files={"file": ("notes.txt", b"whatever", "text/plain")})
+
+    assert response.status_code == 200
+    assert response.json() == {"text": "Extracted text."}
+    assert calls == ["notes.txt"]
+
+
+def test_tts_extract_text_endpoint_returns_400_without_a_file(monkeypatch):
+    client = _logged_in_client(monkeypatch)
+
+    response = client.post("/tts/extract-text")
+
+    assert response.status_code == 400
+    assert "No file provided" in response.json()["error"]
+
+
+def test_tts_extract_text_endpoint_returns_400_for_unsupported_file_type(monkeypatch):
+    client = _logged_in_client(monkeypatch)
+
+    def raise_value_error(upload_file_obj, filename):
+        raise ValueError("Unsupported document type: .pdf. Choose from .txt or .docx")
+
+    monkeypatch.setattr(speech_routes, "extract_text_from_document", raise_value_error)
+
+    response = client.post("/tts/extract-text", files={"file": ("report.pdf", b"bytes", "application/pdf")})
+
+    assert response.status_code == 400
+    assert "Unsupported document type" in response.json()["error"]
+
+
+def test_tts_extract_text_requires_authentication():
+    client = TestClient(app)
+
+    response = client.post(
+        "/tts/extract-text",
+        files={"file": ("notes.txt", b"bytes", "text/plain")},
+        follow_redirects=False,
+    )
 
     assert response.status_code == 303
     assert response.headers["location"] == "/login"

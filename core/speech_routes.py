@@ -18,6 +18,7 @@ from core.text_to_speech import (
     MIN_SPEED,
     OUTPUT_FORMATS,
     convert_audio_file,
+    extract_text_from_document,
     get_voices,
     synthesize,
     synthesize_dialogue,
@@ -82,9 +83,10 @@ async def tts(request: Request):
     voice_id = form.get("voice") or None
     speed = form.get("speed") or DEFAULT_SPEED
     output_format = form.get("output_format") or DEFAULT_OUTPUT_FORMAT
+    title = form.get("title") or None
 
     try:
-        result = await run_in_threadpool(synthesize, text, voice_id, speed, output_format)
+        result = await run_in_threadpool(synthesize, text, voice_id, speed, output_format, title)
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     except RuntimeError as e:
@@ -126,6 +128,26 @@ async def tts_convert(request: Request):
     }
 
 
+@speech_router.post("/tts/extract-text")
+async def tts_extract_text(request: Request):
+    form = await request.form()
+    upload = form.get("file")
+
+    if upload is None or not getattr(upload, "filename", None):
+        return JSONResponse({"error": "No file provided"}, status_code=400)
+
+    try:
+        text = await run_in_threadpool(extract_text_from_document, upload.file, upload.filename)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except RuntimeError as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+    return {"text": text}
+
+
 @speech_router.post("/tts/dialogue")
 async def tts_dialogue(request: Request):
     form = await request.form()
@@ -134,9 +156,10 @@ async def tts_dialogue(request: Request):
     voice_b = form.get("voice_b") or None
     speed = form.get("speed") or DEFAULT_SPEED
     output_format = form.get("output_format") or DEFAULT_OUTPUT_FORMAT
+    title = form.get("title") or None
 
     try:
-        result = await run_in_threadpool(synthesize_dialogue, text, voice_a, voice_b, speed, output_format)
+        result = await run_in_threadpool(synthesize_dialogue, text, voice_a, voice_b, speed, output_format, title)
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     except RuntimeError as e:

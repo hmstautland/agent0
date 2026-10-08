@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -87,6 +88,72 @@ KOKORO_CHUNK_CHARS = 2000
 # Cap on uploads to the format converter - generous for a spoken-word clip,
 # small enough that an upload can't fill the disk.
 MAX_CONVERT_FILE_BYTES = 100 * 1024 * 1024
+
+# Cap on uploads to the document text extractor - generous for a text
+# document, much smaller than the audio cap since these are plain text/docx.
+MAX_DOCUMENT_FILE_BYTES = 20 * 1024 * 1024
+
+SUPPORTED_DOCUMENT_EXTENSIONS = {"txt", "md", "markdown", "docx"}
+
+# Markdown syntax that Kokoro would otherwise read out literally ("hash hash
+# Architecture", "asterisk asterisk important asterisk asterisk"). Order
+# matters: code fences before anything that might match inside one, links
+# before inline code (a link's text could contain backticks), emphasis last
+# since its markers are the most generic. This only runs for .md/.markdown
+# uploads - plain .txt and arbitrary typed/pasted text are left untouched,
+# since "#"/"*" there are as likely to be a hashtag or literal emphasis as
+# markdown syntax. Deliberately narrow (not a full CommonMark parser) and
+# never touches characters with no markdown meaning, such as "@" in an email
+# address.
+_MD_CODE_FENCE_RE = re.compile(r"^```.*?^```[ \t]*$\n?", re.MULTILINE | re.DOTALL)
+_MD_HEADING_RE = re.compile(r"^#{1,6}(?=\s|$)[ \t]*", re.MULTILINE)
+_MD_HR_RE = re.compile(r"^[ \t]*([-*_])(?:[ \t]*\1){2,}[ \t]*$\n?", re.MULTILINE)
+_MD_BLOCKQUOTE_RE = re.compile(r"^>[ \t]?", re.MULTILINE)
+_MD_LIST_MARKER_RE = re.compile(r"^([ \t]*)(?:[-*+]|\d+[.)])[ \t]+", re.MULTILINE)
+_MD_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_MD_INLINE_CODE_RE = re.compile(r"`([^`]*)`")
+_MD_EMPHASIS_RE = re.compile(r"(\*\*\*|\*\*|\*|___|__|_)(\S.*?\S|\S)\1")
+
+
+def _strip_markdown_for_speech(text: str) -> str:
+    """Flatten common Markdown syntax to plain, speakable text."""
+    text = _MD_CODE_FENCE_RE.sub("", text)
+    text = _MD_HEADING_RE.sub("", text)
+    text = _MD_HR_RE.sub("", text)
+    text = _MD_BLOCKQUOTE_RE.sub("", text)
+    text = _MD_LIST_MARKER_RE.sub(r"\1", text)
+    text = _MD_LINK_RE.sub(r"\1", text)
+    text = _MD_INLINE_CODE_RE.sub(r"\1", text)
+    text = _MD_EMPHASIS_RE.sub(r"\2", text)
+    return text
+
+
+# Characters not safe/sane in a filename are replaced with "_"; the rest of
+# a user-provided title is kept as-is so it stays readable on disk.
+_UNSAFE_FILENAME_CHARS_RE = re.compile(r"[^A-Za-z0-9 ._-]")
+
+
+def _build_filename_stem(title: str = None) -> str:
+    """Turn an optional user-provided title into a safe, unique filename stem.
+
+    Falls back to "tts_<date>_<time>" (minute precision) when no title is
+    given, or it sanitizes down to nothing. Either way, a numeric suffix is
+    appended if the name is already taken, so two generations in the same
+    minute never overwrite each other.
+    """
+    title = (title or "").strip()
+    stem = _UNSAFE_FILENAME_CHARS_RE.sub("_", title).strip(" ._") if title else ""
+    if not stem:
+        stem = datetime.now().strftime("tts_%Y-%m-%d_%H-%M")
+
+    candidate = stem
+    counter = 2
+    while (AUDIO_DIR / f"{candidate}.wav").exists():
+        candidate = f"{stem}_{counter}"
+        counter += 1
+
+    return candidate
+
 
 _pipelines = {}  # lang_code -> KPipeline, lazily created and reused
 
@@ -237,8 +304,13 @@ def synthesize(
     voice_id: str = None,
     speed: float = DEFAULT_SPEED,
     output_format: str = DEFAULT_OUTPUT_FORMAT,
+    title: str = None,
 ) -> dict:
-    """Synthesize text to speech with Kokoro-82M, returning {"path", "filename", "mime_type"}."""
+    """Synthesize text to speech with Kokoro-82M, returning {"path", "filename", "mime_type"}.
+
+    title, if given, is sanitized into the saved file's name (deduplicated
+    against existing files); otherwise it defaults to "tts_<date>_<time>".
+    """
     text = (text or "").strip()
     if not text:
         raise ValueError("No text provided")
@@ -261,8 +333,7 @@ def synthesize(
             "Kokoro TTS is not installed. Install it with `pip install kokoro soundfile` (see README)."
         ) from e
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    wav_path = AUDIO_DIR / f"tts_{timestamp}.wav"
+    wav_path = AUDIO_DIR / f"{_build_filename_stem(title)}.wav"
     _write_wav(samples, wav_path)
 
     return _finalize_output(wav_path, output_format)
@@ -304,12 +375,15 @@ def synthesize_dialogue(
     voice_b: str = DEFAULT_DIALOGUE_VOICE_B,
     speed: float = DEFAULT_SPEED,
     output_format: str = DEFAULT_OUTPUT_FORMAT,
+    title: str = None,
 ) -> dict:
     """Synthesize a two-speaker script into one audio file.
 
     text lines must be prefixed "A:" / "B:" (see parse_dialogue); voice_a and
     voice_b are the Kokoro voice IDs to use for each speaker. Turns are
-    concatenated with a short silence gap between them.
+    concatenated with a short silence gap between them. title, if given, is
+    sanitized into the saved file's name; otherwise it defaults to
+    "tts_<date>_<time>".
     """
     text = (text or "").strip()
     if not text:
@@ -346,8 +420,7 @@ def synthesize_dialogue(
 
     samples = np.concatenate(segments)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    wav_path = AUDIO_DIR / f"tts_dialogue_{timestamp}.wav"
+    wav_path = AUDIO_DIR / f"{_build_filename_stem(title)}.wav"
     _write_wav(samples, wav_path)
 
     return _finalize_output(wav_path, output_format)
@@ -402,3 +475,55 @@ def convert_audio_file(upload_file_obj, filename: str, output_format: str) -> di
         "filename": out_path.name,
         "mime_type": OUTPUT_FORMATS[output_format],
     }
+
+
+def extract_text_from_document(upload_file_obj, filename: str) -> str:
+    """Extract plain, speakable text from an uploaded .txt, .md or .docx file.
+
+    Used by the dashboard's drag-and-drop onto the text box, so a document
+    can be spoken without copy-pasting its contents by hand. .md/.markdown
+    files have their Markdown syntax flattened first (see
+    _strip_markdown_for_speech) so Kokoro reads "Architecture" instead of
+    "hash hash Architecture". Legacy .doc isn't supported - there's no good
+    pure-Python reader for it.
+    """
+    ext = Path(filename or "").suffix.lstrip(".").lower()
+
+    if ext == "doc":
+        raise ValueError("Legacy .doc files aren't supported - save as .docx, or paste the text directly.")
+
+    if ext not in SUPPORTED_DOCUMENT_EXTENSIONS:
+        raise ValueError(f"Unsupported document type: .{ext or '?'}. Choose from .txt, .md or .docx")
+
+    with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+
+    try:
+        _save_upload_bounded(upload_file_obj, tmp_path, MAX_DOCUMENT_FILE_BYTES)
+
+        if ext in ("txt", "md", "markdown"):
+            text = tmp_path.read_bytes().decode("utf-8", errors="replace")
+            if ext in ("md", "markdown"):
+                text = _strip_markdown_for_speech(text)
+        else:
+            try:
+                import docx
+            except ImportError as e:
+                raise RuntimeError(
+                    "python-docx is not installed. Install it with `pip install python-docx` (see README)."
+                ) from e
+
+            try:
+                document = docx.Document(str(tmp_path))
+            except Exception as e:
+                raise ValueError(f"Could not read that .docx file: {e}") from e
+
+            text = "\n".join(p.text for p in document.paragraphs)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    text = text.strip()
+    if not text:
+        raise ValueError("No text found in that file")
+
+    return text
