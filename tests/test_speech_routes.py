@@ -1,5 +1,5 @@
 import core.auth as auth_mod
-import core.speech_routes as speech_routes
+import features.audio.routes as speech_routes
 from fastapi.testclient import TestClient
 from core.ui import app
 

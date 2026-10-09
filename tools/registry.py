@@ -54,17 +54,17 @@ TOOLS = {
         "external": 1
     },
     "create_calendar_event": {
-        "func": "tools.calendar.create_event",
+        "func": "features.calendar.calendar.create_event",
         "description": "Create a calendar event with title, start, and optional end time",
         "risk": "medium"
     },
     "read_calendar": {
-        "func": "tools.calendar.read_calendar",
+        "func": "features.calendar.calendar.read_calendar",
         "description": "Read local calendar events",
         "risk": "low"
     },
     "play_audio_file": {
-        "func": "tools.audio.play_audio_file",
+        "func": "features.audio.player.play_audio_file",
         "description": "Find and play a saved audio file from local_storage/audio by (partial) filename - e.g. 'my-music' matches 'my-holiday-music.mp3'. Pass a bare number to pick from the candidates a previous call returned (e.g. after several files matched). Never guess a filename - call this to search.",
         "risk": "low"
     }

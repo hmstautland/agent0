@@ -1,0 +1,190 @@
+/* Calendar feature styles. Relies on .response-card/.icon-btn/.hidden from
+   the main /static/styles.css (loaded first), and the shared card rule's
+   backdrop-blur/border/padding - this file only adds calendar-specific
+   layout on top of that. */
+
+.calendar-card {
+  width: 100%;
+  max-width: 600px;
+  max-height: 85vh;
+
+  display: flex;
+  flex-direction: column;
+}
+
+.calendar-card-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: -20px -20px 16px;
+  padding: 20px 20px 12px;
+
+  background: rgba(20, 20, 20, 0.9);
+  backdrop-filter: blur(10px);
+}
+
+.calendar-card-header h2 {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: center;
+  font-size: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.calendar-card-header .icon-btn {
+  flex-shrink: 0;
+  font-size: 18px;
+  padding: 6px 8px;
+}
+
+.calendar-close-btn {
+  margin-left: 4px;
+}
+
+.calendar-weekdays,
+.calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.calendar-weekday {
+  text-align: center;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  padding-bottom: 6px;
+}
+
+.calendar-day {
+  min-height: 64px;
+  border-radius: 10px;
+  padding: 6px 4px;
+
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+
+  font-size: 10px;
+  overflow: hidden;
+}
+
+.calendar-day-empty {
+  background: transparent;
+  border-color: transparent;
+}
+
+.calendar-day-number {
+  display: block;
+  text-align: center;
+  font-size: 12px;
+  font-weight: bold;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.calendar-day-today {
+  border-color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.calendar-day-has-events {
+  cursor: pointer;
+  transition: 0.15s;
+}
+
+.calendar-day-has-events:hover,
+.calendar-day-has-events:focus-visible {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.calendar-day-event {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.calendar-day-more {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.calendar-event-list:not(:empty) {
+  margin-top: 16px;
+}
+
+.calendar-event-list h3 {
+  margin-bottom: 8px;
+  font-size: 15px;
+}
+
+.calendar-event-detail {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.calendar-event-time {
+  display: block;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 2px;
+}
+
+.calendar-event-detail p {
+  margin-top: 6px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* Below ~480px there isn't room for readable event-name previews inside a
+   ~35px-wide day cell, so cells collapse to just the day number plus a dot
+   indicator - tap a day to see its events in the list below instead. */
+@media (max-width: 480px) {
+  .calendar-card {
+    padding: 14px;
+  }
+
+  .calendar-card-header {
+    margin: -14px -14px 12px;
+    padding: 14px 14px 10px;
+  }
+
+  .calendar-card-header h2 {
+    font-size: 15px;
+  }
+
+  .calendar-day {
+    min-height: 40px;
+    padding: 4px 2px;
+    gap: 0;
+  }
+
+  .calendar-day-event,
+  .calendar-day-more {
+    display: none;
+  }
+
+  .calendar-day-has-events .calendar-day-number::after {
+    content: "";
+    display: block;
+    width: 4px;
+    height: 4px;
+    margin: 3px auto 0;
+    border-radius: 50%;
+    background: white;
+  }
+}

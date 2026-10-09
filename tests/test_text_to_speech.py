@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import core.text_to_speech as tts
+import features.audio.text_to_speech as tts
 
 
 # --- validation --------------------------------------------------------

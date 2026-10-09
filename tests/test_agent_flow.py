@@ -1,8 +1,9 @@
 import json
+from datetime import datetime
 
 import agent as agent_mod
 import tools.web as webmod
-import tools.calendar as calendarmod
+import features.calendar.calendar as calendarmod
 import core.auth as auth_mod
 from fastapi.testclient import TestClient
 from core.ui import app
@@ -38,6 +39,64 @@ def test_llm_requests_search_web_and_uses_tool(monkeypatch):
 
     assert "Found mountains via search_web." in result
     assert search_calls == ["largest mountain"]
+
+
+def test_stream_agent_shows_calendar_widget_without_a_second_llm_call(monkeypatch):
+    # Only two decisions are available (the local-first check, then the
+    # tool choice) - if stream_agent fed the calendar result back for a
+    # further round (text-summarizing it instead of showing the widget),
+    # this would raise instead of passing.
+    decision_sequence = iter([
+        json.dumps({"action": "needs_tools"}),
+        json.dumps({
+            "action": "read_calendar",
+            "arguments": {},
+            "reason": "user asked about their calendar"
+        }),
+    ])
+
+    def fake_query_llm(prompt, model=None):
+        return next(decision_sequence)
+
+    monkeypatch.setattr(agent_mod, "query_llm", fake_query_llm)
+    monkeypatch.setattr(agent_mod, "execute_tool", lambda action, args: [
+        {
+            "name": "Meeting",
+            "date": datetime(2026, 10, 12, 0, 0),
+            "end": datetime(2026, 10, 12, 1, 0),
+            "description": "",
+        }
+    ])
+
+    events = list(agent_mod.stream_agent("callendar"))
+
+    final_events = [e for e in events if e["event"] == "final_response"]
+    assert len(final_events) == 1
+    assert final_events[0]["show_calendar"] == {"year": 2026, "month": 10}
+
+
+def test_run_agent_hands_the_calendar_month_to_the_caller_for_the_ui_to_render(monkeypatch):
+    decisions = iter([
+        json.dumps({"action": "needs_tools"}),
+        json.dumps({
+            "action": "read_calendar",
+            "arguments": {},
+            "reason": "user asked about their calendar"
+        }),
+    ])
+    monkeypatch.setattr(agent_mod, "query_llm", lambda prompt, model=None: next(decisions))
+    monkeypatch.setattr(agent_mod, "execute_tool", lambda action, args: [
+        {
+            "name": "Meeting",
+            "date": datetime(2026, 10, 12, 0, 0),
+            "end": datetime(2026, 10, 12, 1, 0),
+            "description": "",
+        }
+    ])
+
+    result = agent_mod.run_agent("callendar")
+
+    assert result == {"show_calendar": {"year": 2026, "month": 10}}
 
 
 def test_ui_permission_flow(monkeypatch):

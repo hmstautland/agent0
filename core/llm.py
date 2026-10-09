@@ -24,13 +24,16 @@ OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "16384"))
 OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "600"))
 
 
-def query_llm(prompt, model=None):
+def query_llm(prompt, model=None, stream=False):
     payload = {
         "model": model or OLLAMA_MODEL,
         "prompt": prompt,
-        "stream": False,
+        "stream": stream,
         "options": {"num_ctx": OLLAMA_NUM_CTX},
     }
+
+    if stream:
+        return _stream_llm_response(payload)
 
     response = requests.post(OLLAMA_URL, json=payload, timeout=OLLAMA_TIMEOUT)
     response.raise_for_status()
@@ -39,3 +42,20 @@ def query_llm(prompt, model=None):
     if isinstance(body, dict):
         return body.get("response") or body.get("text") or json.dumps(body)
     return str(body)
+
+
+def _stream_llm_response(payload):
+    response = requests.post(OLLAMA_URL, json=payload, stream=True, timeout=120)
+    response.raise_for_status()
+
+    for line in response.iter_lines(decode_unicode=True):
+        if not line:
+            continue
+        try:
+            chunk = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        text = chunk.get("response")
+        if text is not None:
+            yield text

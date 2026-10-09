@@ -1,0 +1,38 @@
+<link rel="stylesheet" href="/static/calendar/calendar.css" />
+<section
+  id="calendar-card"
+  class="response-card calendar-card hidden"
+  {% if calendar_month %}data-initial-year="{{ calendar_month.year }}" data-initial-month="{{ calendar_month.month }}"{% endif %}
+>
+  <div class="calendar-card-header">
+    <button
+      type="button"
+      id="calendar-prev-btn"
+      class="icon-btn calendar-nav-btn"
+      aria-label="Previous month"
+    >
+      ‹
+    </button>
+    <h2 id="calendar-title"></h2>
+    <button
+      type="button"
+      id="calendar-next-btn"
+      class="icon-btn calendar-nav-btn"
+      aria-label="Next month"
+    >
+      ›
+    </button>
+    <button
+      type="button"
+      id="calendar-close-btn"
+      class="icon-btn calendar-close-btn"
+      aria-label="Close calendar"
+    >
+      ×
+    </button>
+  </div>
+
+  <div id="calendar-weekdays" class="calendar-weekdays"></div>
+  <div id="calendar-days" class="calendar-days"></div>
+  <div id="calendar-event-list" class="calendar-event-list"></div>
+</section>

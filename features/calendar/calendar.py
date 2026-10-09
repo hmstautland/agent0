@@ -179,7 +179,7 @@ def create_event(title, start, end=None, description=None):
 
     os.makedirs(os.path.dirname(CALENDAR_FILE), exist_ok=True)
     with open(CALENDAR_FILE, "w", encoding="utf-8") as f:
-        f.writelines(calendar)
+        f.writelines(calendar.serialize_iter())
 
     return f"Event '{title}' added from {event.begin} to {event.end}"
 
@@ -201,77 +201,102 @@ def read_calendar():
     return events
 
 
-SHOW_CALENDAR_RE = re.compile(r"calendar", re.I)
-SHOW_TRIGGER_WORDS = ("show", "my calendar", "what's on", "what is on")
-MONTH_DAY_RE = re.compile(
-    r"(\b\d{1,2}\b)\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*", re.I
-)
+def is_calendar_event_list(value):
+    """True if value looks like read_calendar()'s event-list return shape.
 
-
-def is_calendar_show_command(text):
-    """Detect "show my calendar" / "what's on today" style requests."""
-    lu = (text or "").lower()
-    return bool(SHOW_CALENDAR_RE.search(lu)) and any(word in lu for word in SHOW_TRIGGER_WORDS)
-
-
-def _event_date(event):
-    d = event.get("date")
-    if hasattr(d, "date") and callable(d.date):
-        return d.date()
-    if isinstance(d, datetime):
-        return d.date()
-    if hasattr(d, "naive"):
-        try:
-            return d.naive.date()
-        except Exception:
-            pass
-    return None
-
-
-def _to_plain_datetime(value):
-    if hasattr(value, "naive"):
-        try:
-            return value.naive
-        except Exception:
-            pass
-    if hasattr(value, "datetime"):
-        try:
-            return value.datetime
-        except Exception:
-            pass
-    return value
-
-
-def get_calendar_view(user_input):
-    """Read the calendar and apply any date filter implied by user_input.
-
-    Used for "show my calendar" style requests, which bypass the LLM. Handles
-    "today" and a bare day+month (e.g. "17 may"), and normalizes event dates
-    to plain datetimes for the template.
+    Used to recognize a read_calendar tool result regardless of which code
+    path produced it (the chat shortcut, or the LLM choosing the tool
+    itself), so it can be shown as the month-grid calendar instead of being
+    flattened into a text summary.
     """
-    events = read_calendar()
-    if not isinstance(events, list):
-        events = []  # read_calendar() returns a string when empty
+    return (
+        isinstance(value, list)
+        and bool(value)
+        and isinstance(value[0], dict)
+        and "date" in value[0]
+        and "end" in value[0]
+    )
 
-    lu = (user_input or "").lower()
 
-    if "today" in lu:
-        today = datetime.now().date()
-        events = [e for e in events if _event_date(e) == today]
+def events_in_month(year, month):
+    """Events whose start falls in the given (year, month), always a list.
 
-    m = MONTH_DAY_RE.search(lu)
-    if m:
-        day, month_str = m.group(1), m.group(2)
-        try:
-            target_date = _parse_datetime(f"{day} {month_str}").date()
-            events = [e for e in events if _event_date(e) == target_date]
-        except ValueError:
-            pass
+    Unlike read_calendar(), this never returns the "No events found." string
+    sentinel - callers (the month-grid calendar view) just want an empty
+    list to render a blank month.
+    """
+    calendar = _load_calendar()
 
-    for e in events:
-        if "date" in e:
-            e["date"] = _to_plain_datetime(e["date"])
-        if "end" in e:
-            e["end"] = _to_plain_datetime(e["end"])
+    events = []
+    for event in sorted(calendar.events, key=lambda e: e.begin):
+        if event.begin.year == year and event.begin.month == month:
+            events.append({
+                "name": event.name,
+                "date": event.begin,
+                "end": event.end,
+                "description": event.description
+            })
 
     return events
+
+
+def event_iso(value):
+    """Normalize an ics Arrow (or plain datetime) into an ISO string for JSON."""
+    if hasattr(value, "naive"):
+        try:
+            return value.naive.isoformat()
+        except Exception:
+            pass
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def month_payload(year=None, month=None):
+    """JSON-ready events for GET /calendar/month; defaults to the current month."""
+    now = datetime.now()
+    year = year or now.year
+    month = month if month and 1 <= month <= 12 else now.month
+
+    return {
+        "year": year,
+        "month": month,
+        "events": [
+            {
+                "name": e["name"],
+                "start": event_iso(e["date"]),
+                "end": event_iso(e["end"]),
+                "description": e["description"],
+            }
+            for e in events_in_month(year, month)
+        ],
+    }
+
+
+def is_calendar_request(user_input):
+    """True for "show my calendar" / "what's on" style chat messages."""
+    lu = (user_input or "").lower()
+    return "calendar" in lu and (
+        "show" in lu or "my calendar" in lu or "what's on" in lu or "what is on" in lu
+    )
+
+
+def calendar_target_month(user_input):
+    """Pick which (year, month) a "show my calendar" chat message means.
+
+    Defaults to the current month; a mentioned day+month (e.g. "17 may")
+    opens whichever month contains that date instead.
+    """
+    target = datetime.now()
+
+    m = re.search(
+        r"(\b\d{1,2}\b)\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*",
+        (user_input or "").lower(),
+    )
+    if m:
+        try:
+            target = _parse_datetime(f"{m.group(1)} {m.group(2)}")
+        except Exception:
+            pass
+
+    return target.year, target.month

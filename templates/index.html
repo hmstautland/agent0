@@ -6,25 +6,23 @@
     <link rel="stylesheet" href="/static/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <link
-      rel="icon"
-      type="image/png"
-      href="/favicon/favicon-96x96.png"
-      sizes="96x96"
-    />
-    <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg" />
-    <link rel="shortcut icon" href="/favicon/favicon.ico" />
-    <link
-      rel="apple-touch-icon"
-      sizes="180x180"
-      href="/favicon/apple-touch-icon.png"
-    />
-    <link rel="manifest" href="/favicon/site.webmanifest" />
+    {% include "components/favicons.html" %}
   </head>
   <body>
     <canvas id="starfield"></canvas>
     <div class="main-container">
       <h1 class="logo">Agent 0</h1>
+
+      <div id="stream-card" class="response-card hidden">
+        <h3 id="stream-heading"></h3>
+        <img
+          id="thinking-img"
+          class="thinking-img hidden"
+          src="/media/thinking.png"
+          alt="Thinking..."
+        />
+        <pre id="stream-output"></pre>
+      </div>
 
       <form id="main-chat-form" method="post" action="/ask" class="chat-form">
         <button type="button" class="icon-btn add-btn">+</button>
@@ -44,295 +42,19 @@
         >
           🎤
         </button>
-        <button
-          type="button"
-          class="icon-btn tts-btn"
-          onclick="toggleTtsDashboard()"
-          aria-haspopup="true"
-          aria-expanded="false"
-          aria-controls="tts-dashboard"
-          title="Text to speech"
-        >
-          🗣️
-        </button>
+        {% include "audio/tts_button.html" %}
       </form>
 
-      <section
-        id="tts-dashboard"
-        class="response-card tts-dashboard hidden"
-        aria-label="Text to speech dashboard"
-      >
-        <div class="tts-dashboard-header">
-          <h3>Text to Speech</h3>
-          <button
-            type="button"
-            class="icon-btn tts-close-btn"
-            onclick="toggleTtsDashboard()"
-            aria-label="Close text to speech dashboard"
-          >
-            ×
-          </button>
-        </div>
+      {% include "audio/tts_dashboard.html" %}
 
-        <label class="tts-dialogue-toggle">
-          <input type="checkbox" id="tts-dialogue-mode" />
-          Two-speaker dialogue
-        </label>
-
-        <p id="tts-dialogue-hint" class="tts-hint hidden">
-          Prefix every line with <code>A:</code> or <code>B:</code> to mark
-          who's speaking - each speaker keeps its own voice below. Example:
-          <br /><code>A: Have you tried the new coffee place?</code
-          ><br /><code>B: Not yet, is it any good?</code>
-        </p>
-
-        <div class="tts-field">
-          <label for="tts-title">Title / store as (optional)</label>
-          <input
-            type="text"
-            id="tts-title"
-            class="tts-title-input"
-            placeholder="Leave blank to auto-name"
-          />
-        </div>
-
-        <div class="tts-field">
-          <div class="tts-text-label-row">
-            <label for="tts-text"
-              >Text (or drop a .txt/.md/.docx file here)</label
-            >
-            <button
-              type="button"
-              id="tts-text-browse-btn"
-              class="tts-browse-btn"
-              onclick="document.getElementById('tts-text-file').click()"
-            >
-              Browse…
-            </button>
-          </div>
-          <textarea
-            id="tts-text"
-            class="tts-textarea"
-            rows="4"
-            placeholder="Type or paste text to speak..."
-          ></textarea>
-          <input
-            type="file"
-            id="tts-text-file"
-            class="hidden"
-            accept=".txt,.md,.markdown,.docx"
-          />
-        </div>
-
-        <div class="tts-controls-row">
-          <div class="tts-field" id="tts-single-voice-field">
-            <label for="tts-dash-voice">Voice</label>
-            <select id="tts-dash-voice" aria-label="English voice"></select>
-          </div>
-
-          <div class="tts-field hidden" id="tts-voice-a-field">
-            <label for="tts-voice-a">Speaker A voice</label>
-            <select id="tts-voice-a" aria-label="Speaker A voice"></select>
-          </div>
-
-          <div class="tts-field hidden" id="tts-voice-b-field">
-            <label for="tts-voice-b">Speaker B voice</label>
-            <select id="tts-voice-b" aria-label="Speaker B voice"></select>
-          </div>
-
-          <div class="tts-field">
-            <label for="tts-format">Output format</label>
-            <select id="tts-format" aria-label="Output format">
-              <option value="wav">WAV</option>
-              <option value="mp3">MP3</option>
-              <option value="flac">FLAC</option>
-              <option value="ogg">OGG (Opus)</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="tts-field">
-          <label for="tts-speed"
-            >Speed <span id="tts-speed-value">1.00x</span></label
-          >
-          <input
-            type="range"
-            id="tts-speed"
-            min="0.5"
-            max="2"
-            step="0.05"
-            value="1"
-          />
-        </div>
-
-        <button
-          type="button"
-          id="tts-generate-btn"
-          class="tts-generate-btn"
-          onclick="generateSpeech()"
-        >
-          Generate
-        </button>
-
-        <details class="tts-collapsible tss-field">
-          <summary>Convert an existing file</summary>
-
-          <div class="tts-collapsible-content">
-            <div class="tts-field">
-              <div
-                id="tts-drop-zone"
-                class="tts-drop-zone"
-                tabindex="0"
-                role="button"
-                aria-label="Choose or drop an audio file to convert"
-              >
-                <span id="tts-drop-zone-text"
-                  >Drag an audio file here, or click to browse (WAV, MP3,
-                  FLAC, OGG)</span
-                >
-              </div>
-              <input
-                type="file"
-                id="tts-convert-file"
-                class="hidden"
-                accept=".wav,.mp3,.flac,.ogg"
-              />
-            </div>
-
-            <div class="tts-controls-row">
-              <div class="tts-field">
-                <label for="tts-convert-format">Convert to</label>
-                <select id="tts-convert-format" aria-label="Convert to format">
-                  <option value="wav">WAV</option>
-                  <option value="mp3">MP3</option>
-                  <option value="flac">FLAC</option>
-                  <option value="ogg">OGG (Opus)</option>
-                </select>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              id="tts-convert-btn"
-              class="tts-generate-btn"
-              onclick="convertFile()"
-            >
-              Convert
-            </button>
-          </div>
-        </details>
-
-        <details class="tts-collapsible tts-field">           
-          <summary>Play an existing file</summary>
-
-          <div class="tts-play-search-row">
-            <input
-              type="text"
-              id="tts-play-search"
-              class="tts-play-search"
-              placeholder="Search saved files by name..."
-            />
-            <button
-              type="button"
-              id="tts-play-search-btn"
-              class="tts-generate-btn"
-              onclick="searchSavedAudio()"
-            >
-              Find
-            </button>
-          </div>
-          <div id="tts-play-results" class="tts-play-results"></div>
-        </details>
-
-        <p id="tts-error" class="error-card hidden" aria-live="polite"></p>
-
-        <div id="tts-player" class="tts-player hidden">
-          <audio id="tts-audio" controls></audio>
-          <a id="tts-download" download>Download</a>
-        </div>
-      </section>
-
-      <dialog id="tts-result-dialog" class="tts-result-dialog">
-        <h3>Audio generated</h3>
-
-        <div class="tts-field">
-          <label for="tts-result-title">Saved as</label>
-          <input type="text" id="tts-result-title" readonly />
-        </div>
-
-        <div class="tts-result-dialog-actions">
-          <button
-            type="button"
-            id="tts-result-play-btn"
-            class="tts-generate-btn"
-          >
-            ▶ Play now
-          </button>
-          <button
-            type="button"
-            class="tts-generate-btn tts-btn-secondary"
-            onclick="document.getElementById('tts-result-dialog').close()"
-          >
-            Close
-          </button>
-        </div>
-      </dialog>
-
-      <div id="stream-card" class="response-card hidden">
-        <h3 id="stream-heading"></h3>
-        <img
-          id="thinking-img"
-          class="thinking-img hidden"
-          src="/media/thinking.png"
-          alt="Thinking..."
-        />
-        <pre id="stream-output"></pre>
-      </div>
-
-      <div id="stream-calendar" class="response-card hidden"></div>
-
-      <div id="stream-audio" class="response-card hidden"></div>
+      {% include "audio/stream_audio.html" %}
 
       <div id="stream-error" class="error-card hidden">
         <h3 style="color: red">Error :</h3>
         <pre id="stream-error-text"></pre>
       </div>
 
-      <section
-        id="stream-permission"
-        class="permission-card hidden"
-        style="border: 1px solid #f99; padding: 12px; margin-top: 20px"
-      >
-        <h3 style="color: darkorange">Permission Required</h3>
-        <p><strong>Action:</strong> <span id="perm-action"></span></p>
-        <p><strong>Risk:</strong> <span id="perm-risk"></span></p>
-        <p><strong>Reason:</strong> <span id="perm-reason"></span></p>
-        <p><strong>Arguments:</strong></p>
-        <pre id="perm-args"></pre>
-
-        <form id="stream-permission-form" method="post" action="/ask">
-          <input type="hidden" name="input" id="perm-input" value="" />
-          <input
-            type="hidden"
-            name="permission_action"
-            id="perm-action-field"
-            value=""
-          />
-          <input
-            type="hidden"
-            name="permission_args"
-            id="perm-args-field"
-            value=""
-          />
-          <input
-            type="hidden"
-            name="permission_risk"
-            id="perm-risk-field"
-            value=""
-          />
-          <div id="perm-buttons"></div>
-        </form>
-      </section>
+      {% include "components/permission_card.html" %}
 
       {% if response %}
       <div id="server-response-card" class="response-card">
@@ -341,63 +63,22 @@
         <pre>{{ response }}</pre>
       </div>
 
-      {% endif %} {% if calendar_data %}
-      <div class="response-card">
-        <section>{% include "components/calendar.html" %}</section>
-      </div>
+      {% endif %}
 
-      {% endif %} {% if audio_data %}
-      <div class="response-card">
-        <section>{% include "components/audio_play.html" %}</section>
-      </div>
+      {% include "calendar/calendar_card.html" %}
 
-      {% endif %} {% if error %}
+      {% if error %}
       <div class="error-card">
         <h3 style="color: red">Error :</h3>
         <pre>{{ error }}</pre>
       </div>
 
-      {% endif %} {% if permission %}
-      <section style="border: 1px solid #f99; padding: 12px; margin-top: 20px">
-        <h3 style="color: darkorange">Permission Required</h3>
-        <p><strong>Action:</strong> {{ permission.action }}</p>
-        <p><strong>Risk:</strong> {{ permission.risk }}</p>
-        <p><strong>Reason:</strong> {{ permission.reason }}</p>
-        <p><strong>Arguments:</strong></p>
-        <pre>{{ permission.args }}</pre>
-
-        <form method="post" action="/ask">
-          <input type="hidden" name="input" value="{{ input }}" />
-          <input
-            type="hidden"
-            name="permission_action"
-            value="{{ permission.action }}"
-          />
-          <input
-            type="hidden"
-            name="permission_args"
-            value="{{ permission.args|e }}"
-          />
-          <input
-            type="hidden"
-            name="permission_risk"
-            value="{{ permission.risk }}"
-          />
-          <button type="submit" name="permission_decision" value="y">
-            Approve
-          </button>
-          <button type="submit" name="permission_decision" value="n">
-            Reject
-          </button>
-        </form>
-      </section>
       {% endif %}
     </div>
     <script src="/static/starfield.js"></script>
     <script src="/static/speech.js"></script>
-    <script src="/static/tts.js"></script>
-    <script src="/static/calendar-table.js"></script>
-    <script src="/static/audio-player.js"></script>
+    {% include "audio/scripts.html" %}
+    {% include "calendar/scripts.html" %}
     <script src="/static/chat.js"></script>
   </body>
 </html>

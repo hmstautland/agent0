@@ -7,7 +7,6 @@ const streamCard = document.getElementById("stream-card");
 const streamHeading = document.getElementById("stream-heading");
 const thinkingImg = document.getElementById("thinking-img");
 const streamOutput = document.getElementById("stream-output");
-const streamCalendar = document.getElementById("stream-calendar");
 const streamAudio = document.getElementById("stream-audio");
 const streamError = document.getElementById("stream-error");
 const streamErrorText = document.getElementById("stream-error-text");
@@ -24,11 +23,10 @@ function clearStreamUI() {
   streamHeading.textContent = "";
   streamOutput.textContent = "";
   streamErrorText.textContent = "";
-  streamCalendar.innerHTML = "";
   streamAudio.innerHTML = "";
   thinkingImg.classList.add("hidden");
   streamCard.classList.add("hidden");
-  streamCalendar.classList.add("hidden");
+  calendarCard.classList.add("hidden");
   streamAudio.classList.add("hidden");
   streamError.classList.add("hidden");
 }
@@ -43,7 +41,6 @@ async function showPermissionRequest(eventData) {
   const permActionField = document.getElementById("perm-action-field");
   const permArgsField = document.getElementById("perm-args-field");
   const permRiskField = document.getElementById("perm-risk-field");
-  const permButtons = document.getElementById("perm-buttons");
 
   permAction.textContent = eventData.action;
   permRisk.textContent = eventData.risk;
@@ -54,11 +51,6 @@ async function showPermissionRequest(eventData) {
   permActionField.value = eventData.action;
   permArgsField.value = JSON.stringify(eventData.args || {});
   permRiskField.value = eventData.risk;
-
-  permButtons.innerHTML = `
-    <button type="submit" name="permission_decision" value="y">Approve</button>
-    <button type="submit" name="permission_decision" value="n">Reject</button>
-  `;
 
   permSection.classList.remove("hidden");
 }
@@ -121,7 +113,9 @@ function handleStreamEvent(event) {
     } else {
       streamCard.classList.add("hidden");
     }
-    renderCalendarTable(event.calendar_data);
+    if (event.show_calendar) {
+      loadCalendarMonth(event.show_calendar.year, event.show_calendar.month);
+    }
     renderAudioResult(event.audio);
   } else if (event.event === "error") {
     thinkingImg.classList.add("hidden");

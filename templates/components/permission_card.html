@@ -1,0 +1,30 @@
+{# Approval prompt for a tool call. One card serves both paths: chat.js fills
+   it in for streamed (/ask_stream) requests, and the plain /ask page renders
+   it pre-filled and visible when `permission` is set. #}
+{% set p = permission or {} %}
+<section
+  id="stream-permission"
+  class="permission-card{% if not permission %} hidden{% endif %}"
+  style="border: 1px solid #f99; padding: 12px; margin-top: 20px"
+>
+  <h3 style="color: darkorange">Permission Required</h3>
+  <p><strong>Action:</strong> <span id="perm-action">{{ p.action }}</span></p>
+  <p><strong>Risk:</strong> <span id="perm-risk">{{ p.risk }}</span></p>
+  <p>
+    <strong>Reason:</strong>
+    <span id="perm-reason">{{ (p.reason or "No reason provided.") if permission else "" }}</span>
+  </p>
+  <p><strong>Arguments:</strong></p>
+  <pre id="perm-args">{{ p.args }}</pre>
+
+  <form id="stream-permission-form" method="post" action="/ask">
+    <input type="hidden" name="input" id="perm-input" value="{{ input }}" />
+    <input type="hidden" name="permission_action" id="perm-action-field" value="{{ p.action }}" />
+    <input type="hidden" name="permission_args" id="perm-args-field" value="{{ p.args }}" />
+    <input type="hidden" name="permission_risk" id="perm-risk-field" value="{{ p.risk }}" />
+    <div id="perm-buttons">
+      <button type="submit" name="permission_decision" value="y">Approve</button>
+      <button type="submit" name="permission_decision" value="n">Reject</button>
+    </div>
+  </form>
+</section>

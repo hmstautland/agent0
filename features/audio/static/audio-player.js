@@ -1,8 +1,14 @@
 // Renders the "audio" field of a final_response stream event (see
-// core/agent_routes.py's audio_play_result / tools/audio.py's
+// core/agent_routes.py's audio_play_result / features/audio/player.py's
 // play_audio_file) into the streamAudio element declared in chat.js, which
 // loads after this file but always runs before any of these functions are
 // called.
+
+function escapeAudioText(value) {
+  const div = document.createElement("div");
+  div.textContent = value == null ? "" : String(value);
+  return div.innerHTML;
+}
 
 function escapeHtmlAttr(value) {
   return String(value == null ? "" : value)
@@ -23,7 +29,7 @@ function renderAudioResult(audio) {
     streamAudio.innerHTML = `
       <div class="audio-play-card">
         <audio controls autoplay src="${escapeHtmlAttr(audio.audio_url)}"></audio>
-        <p class="audio-play-filename">${escapeHtml(audio.filename)}</p>
+        <p class="audio-play-filename">${escapeAudioText(audio.filename)}</p>
       </div>
     `;
     streamAudio.classList.remove("hidden");
@@ -35,7 +41,7 @@ function renderAudioResult(audio) {
       .map(
         (c) => `
         <button type="button" class="audio-choice-btn" data-number="${escapeHtmlAttr(c.number)}">
-          ${escapeHtmlAttr(c.number)}. ${escapeHtml(c.filename)}
+          ${escapeHtmlAttr(c.number)}. ${escapeAudioText(c.filename)}
         </button>`
       )
       .join("");

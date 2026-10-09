@@ -1,4 +1,4 @@
-import tools.audio as audio_mod
+import features.audio.player as audio_mod
 
 
 def _make_files(tmp_path, names):

@@ -1,0 +1,5 @@
+{# Audio result card: filled by audio-player.js for streamed requests, and
+   rendered server-side for the plain /ask page when `audio_data` is set. #}
+<div id="stream-audio" class="response-card{% if not audio_data %} hidden{% endif %}">
+  {% if audio_data %}{% include "audio/audio_play.html" %}{% endif %}
+</div>

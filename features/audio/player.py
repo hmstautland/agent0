@@ -7,13 +7,13 @@ creation and note-taking are - the local model isn't reliable at recognizing
 
 "Playing" a file from a backend tool call can't itself make sound - the
 result just tells the web UI which /audio/<file> to load into a player (see
-core/agent_routes.py's audio_play_result() and static/audio-player.js).
+core/agent_routes.py's audio_play_result() and features/audio/static/audio-player.js).
 """
 
 import re
 from pathlib import Path
 
-from core.text_to_speech import AUDIO_DIR
+from features.audio.text_to_speech import AUDIO_DIR
 
 AUDIO_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg"}
 

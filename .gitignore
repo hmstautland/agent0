@@ -48,7 +48,6 @@ local_storage/
 
 # Downloaded model files (e.g. Piper voices)
 models/
-audio/
 
 # Large model or media files
 *.csv

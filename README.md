@@ -1,179 +1,67 @@
-# 📘 Project README — Local AI Agent (Ollama + Tools + UI)
+# agent0
 
-## 🧠 Abstract
-
-This project implements a local-first AI agent powered by Ollama (Mistral 7B) with a modular Python architecture. The agent supports multi-step reasoning, controlled tool usage, and a permission layer for safe interaction with external systems and local resources. It can perform tasks such as web search, file inspection, and calendar management, while maintaining security through explicit approval flows, logging, and sandboxed execution. A lightweight FastAPI-based dashboard provides a user interface, and the system is designed to be extensible toward more advanced agent capabilities.
-
----
-
-# 🧱 Architecture Overview
+A local-first AI agent: FastAPI web UI + CLI, a multi-step tool-calling loop, and local-only models (Ollama for text, Kokoro for speech, faster-whisper for transcription). No hosted AI APIs.
 
 ```
-User (CLI / UI / Voice)
-        ↓
-Agent Loop (multi-step reasoning)
-        ↓
-Permission Layer (approve/deny)
-        ↓
-Tool Layer (web, files, calendar)
-        ↓
-LLM (Ollama - Mistral)
+User (CLI / web UI / voice)
+  -> agent loop (multi-step)
+  -> permission layer (approve/deny)
+  -> tools (files, web search, calendar, notes, audio playback)
+  -> Ollama
 ```
 
----
+## Features
 
-# 📂 Project Structure
+- Local LLM via Ollama; tries a direct answer first, escalates to the tool loop when tools are needed
+- Permission-gated tools (safe by default), diff preview before file writes, project-sandboxed file access
+- Web search (DuckDuckGo) and page reading, calendar, notes, saved-audio playback
+- Text-to-speech (Kokoro) and speech-to-text (faster-whisper) from the web UI
+- All actions logged to `local_storage/logs.txt`
+
+## Layout
 
 ```
-agent0/
-├── agent.py                # main agent loop
-├── config/
-│   ├── settings.py         # rules, limits
-│   └── system_prompt.py    # LLM behavior
-├── core/
-│   ├── llm.py              # ollama calls
-│   ├── permission.py       # approval logic
-│   ├── logger.py           # logging
-│   ├── diff.py             # diff preview
-│   └── ui.py               # FastAPI dashboard
-├── tools/
-│   ├── web.py
-│   ├── calendar.py
-│   ├── files.py
-│   └── registry.py
-├── templates/
-│   └── index.html
-├── storage/
-│   └── logs.txt
-├── venv/
-└── start_agent.bat
+agent.py          agent loop (CLI + streaming web)
+config/           settings (permission rules), system prompt
+core/             llm, permission, logger, diff, FastAPI app + routes, STT
+tools/            tools the LLM can call (registry.py declares them)
+features/         calendar/, audio/ (TTS, player) - routes, static, templates
+templates/        index.html + shared components
+tests/            pytest suite
 ```
 
----
+See `CLAUDE.md` for architecture details.
 
-# ⚙️ Features
+## Setup
 
-## ✅ Core Capabilities
+Create and activate the virtual environment:
 
-- Local LLM via Ollama (Mistral 7B)
-- Multi-step reasoning agent loop
-- Tool orchestration system
-- Permission-based execution (safe-by-default)
-- Logging of all actions
-
-## 🧰 Tools
-
-- 🌐 Web search (DuckDuckGo)
-- 📂 File system access (restricted to project)
-- 📅 Calendar (.ics or API-ready)
-- 🧠 Project structure awareness
-
-## 🔐 Security
-
-- Explicit approval for high-risk actions
-- File access sandboxing
-- Diff preview before file writes
-- Logging of all actions
-
-## 🖥️ Interfaces
-
-- CLI interaction
-- FastAPI web dashboard
-- (Optional) Speech-to-text input
-
----
-
-# 🚀 How to Run
-
-## 1. Activate Virtual Environment
-
-### Linux(CatchyOS)
 ```
 python -m venv venv
-source venv/bin/activate.fish 
-(or look in folder if using other terminals)
+source venv/bin/activate.fish     # Linux (fish); bash: source venv/bin/activate
+.\venv\Scripts\Activate.ps1       # Windows PowerShell
+venv\Scripts\activate.bat          # Windows CMD
 ```
 
-### PowerShell:
+Install and pull models:
 
-```
-.\venv\Scripts\Activate.ps1
-```
-
-### CMD:
-
-```
-venv\Scripts\activate.bat
-```
-
----
-
-## Install
 ```
 pip install -r requirements.txt
+
+ollama serve                      # usually already a service
+ollama pull qwen3:8b              # direct answers
+ollama pull qwen3-coder:30b       # tool loop (files/code)
 ```
 
-## 2. Start Ollama
-
-Ollama runs one server that serves every model you have pulled - the model is
-chosen per request by the agent, not by the server. So start the server and pull
-the two models the agent uses (`ollama run <model>` is only an interactive chat
-client and is not needed by the app):
+Run:
 
 ```
-ollama serve            # usually already running as a service
-ollama pull qwen3:4b          # light, for direct answers
-ollama pull qwen3-coder:30b   # heavy, for file/code work
+uvicorn core.ui:app --reload      # web UI at http://127.0.0.1:8000
+python -m agent                   # CLI
+python -m pytest                  # tests
 ```
 
-### Model settings (environment variables)
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `OLLAMA_MODEL` | `qwen3:8b` | Light model for direct answers (the local-first step) |
-| `OLLAMA_CODE_MODEL` | `qwen3-coder:30b` | Heavier model used once a request escalates to the tool loop (reading/editing files) |
-| `OLLAMA_NUM_CTX` | `16384` | Context window. Ollama's own default is 4096, which is too small to hold a source file plus the instructions - the overflow is silently dropped and the model starts replying with prose or invented tool names |
-| `OLLAMA_TIMEOUT` | `600` | Request timeout in seconds |
-
-Override either one per shell, for example to run everything on the light model:
-
-```
-set -x OLLAMA_CODE_MODEL qwen3:4b   # fish
-```
-
-Measured on a Ryzen AI Max+ 395 (CPU only), which is why `qwen3:4b` is the
-default over `mistral:7b`:
-
-| model | generation | prompt eval | admits it needs the file tools |
-| --- | --- | --- | --- |
-| `qwen3:4b` | 34 tok/s | 206 tok/s | yes |
-| `mistral:7b` | 24 tok/s | 100 tok/s | no - invents an answer instead |
-
----
-
-## 3. Run Agent (CLI)
-
-```
-python -m agent
-```
-
----
-
-## 4. Run Web UI
-
-```
-uvicorn core.ui:app --reload
-```
-
-Open:
-
-```
-http://127.0.0.1:8000
-```
-
----
-
-## 5. Windows Shortcut (.bat)
+### Windows shortcut (`.bat`)
 
 ```
 @echo off
@@ -183,166 +71,59 @@ uvicorn core.ui:app
 pause
 ```
 
----
-
-# 🗣️ Text-to-Speech (Kokoro-82M)
-
-The TTS dashboard (open it via the 🗣️ icon in the chat bar) generates speech
-with [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M), an 82M-parameter
-open-weight TTS model.
-
-### FFmpeg (for MP3 / OGG output)
-
-WAV and FLAC are produced natively (no external tools, via `soundfile`). MP3
-and OGG/Opus are encoded from that WAV with `ffmpeg`, which must be on
-`PATH`:
-
-```
-sudo pacman -S ffmpeg      # Arch / CachyOS
-sudo apt install ffmpeg    # Debian/Ubuntu
-```
-
-## CPU / CUDA configuration
+## Ollama environment variables
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `TTS_DEVICE` | `auto` | `auto` picks CUDA if available, otherwise CPU. Set to `cpu` or `cuda` to force one. |
-| `KOKORO_CACHE_DIR` | `models/kokoro` | Where Kokoro's downloaded model weights are cached. |
+| `OLLAMA_MODEL` | `qwen3:8b` | Light model for direct answers |
+| `OLLAMA_CODE_MODEL` | `qwen3-coder:30b` | Model for the tool loop |
+| `OLLAMA_NUM_CTX` | `16384` | Context window (Ollama's 4096 default silently truncates source files) |
+| `OLLAMA_TIMEOUT` | `600` | Request timeout (seconds) |
 
-Each accent's model is loaded once, on first use, and
-reused for every request after that - it is never reloaded per-request.
+To run everything on the light model: `set -x OLLAMA_CODE_MODEL qwen3:8b` (fish). To switch models, `ollama pull <model>` and set the variable above.
 
-## Model cache behavior
+## Text-to-Speech (Kokoro-82M)
 
-On first use of an accent, Kokoro downloads its weights from Hugging Face
-into `KOKORO_CACHE_DIR` (`models/kokoro` by default). Every request after
-that is fully offline.
+Open the dashboard with the 🗣️ icon in the chat bar. Weights download from Hugging Face on first use of an accent into `KOKORO_CACHE_DIR`, then everything runs offline.
 
-## Available voices
+**ffmpeg** is required for MP3/OGG output and file conversion (WAV/FLAC are native): `sudo pacman -S ffmpeg` or `sudo apt install ffmpeg`.
 
-Only British English voices from the official Kokoro-82M voice pack are
-offered (`GET /tts/voices` lists them):
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `TTS_DEVICE` | `auto` | `auto` (CUDA if available), `cpu`, or `cuda` |
+| `KOKORO_CACHE_DIR` | `models/kokoro` | Model weight cache |
 
-- **Female:** Alice, Emma, Isabella, Lily
-- **Male:** Daniel, Fable, George, Lewis
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /tts` | Generate speech (`text`, `voice`, `speed`, `output_format`, `title`) |
+| `POST /tts/dialogue` | Two-speaker dialogue (`text`, `voice_a`, `voice_b`, `speed`, `output_format`, `title`) |
+| `POST /tts/convert` | Re-encode an audio file (`file`, `output_format`) |
+| `POST /tts/extract-text` | Extract text from a document (`file`) |
+| `GET /tts/voices` | Voices, formats, speed range and defaults |
+| `GET /tts/files` | List/search saved audio (`q`) |
 
-## Two-speaker dialogue
+All routes require a logged-in session (401 otherwise). Output goes to `local_storage/audio/`.
 
-Enable "Two-speaker dialogue" in the TTS dashboard to turn a script into a
-conversation between two voices in one audio file (`POST /tts/dialogue`,
-taking `text`, `voice_a`, `voice_b`, `speed`, `output_format`).
+**Limits and defaults**: speed 0.5-2.0 (default 1.0); formats `wav` (default), `mp3`, `flac`, `ogg`; max 10,000 words per request; default voice Isabella.
 
-Prefix every line of the input with `A:` or `B:` to mark who's speaking:
+**Voices** (British English): Alice, Emma, Isabella, Lily (female); Daniel, Fable, George, Lewis (male).
+
+**Dialogue**: prefix each line with `A:` or `B:` (case-insensitive). Each speaker gets their own voice (defaults: A Isabella, B George), turns are joined with a 0.3s gap, consecutive lines from one speaker are merged, and unprefixed lines are rejected.
 
 ```
 A: Have you tried the new coffee place?
 B: Not yet, is it any good?
-A: Really good, you should go.
 ```
 
-Each line is synthesized with its speaker's selected voice and the turns are
-concatenated with a short silence gap between them. Consecutive lines from
-the same speaker are merged into one turn; a line with no `A:`/`B:` prefix is
-rejected with a clear error. The dashboard defaults Speaker A to Isabella and
-Speaker B to George.
+**Documents**: drop or browse a `.txt`, `.md`/`.markdown` or `.docx` (max 20MB) to fill the text box. Markdown is flattened to speakable text (`.md` only, not typed text); `.doc` is unsupported.
 
-## Speaking a document
+**File names**: the optional `title` is sanitized and deduplicated (`My Clip.wav`, `My Clip_2.wav`); blank gives `tts_<date>_<HH-MM>`. A dialog shows the saved file with a "Play now" button; nothing autoplays.
 
-Drag a `.txt`, `.md`/`.markdown` or `.docx` file onto the dashboard's text
-box - or click the "Browse…" button next to its label - to fill it with that
-file's text (`POST /tts/extract-text`, taking `file`), no copy-pasting
-needed. Legacy `.doc` isn't supported (there's no good pure-Python reader
-for it); save as `.docx` instead. Uploads are capped at 20MB.
+**Convert**: input must be WAV/MP3/FLAC/OGG, max 100MB; ffmpeg re-encodes without running Kokoro. Output is named `converted_<timestamp>.<ext>`.
 
-For `.md`/`.markdown` files, Markdown syntax is flattened to plain,
-speakable text first - headings, bold/italic markers, inline code
-backticks, link brackets, list bullets, blockquote markers and horizontal
-rules are all stripped (keeping their content) so Kokoro reads "Architecture"
-instead of "hash hash Architecture". This only applies to `.md` uploads, not
-typed/pasted text, since a bare `#` or `*` there is as likely to be a
-hashtag or literal emphasis as Markdown - and it never touches characters
-with no Markdown meaning, such as `@` in an email address.
+Kokoro-82M is released by [hexgrad](https://huggingface.co/hexgrad/Kokoro-82M) under Apache 2.0.
 
-## Naming a generated file
-
-The optional "Title / store as" field above the text box sets the generated
-file's name (`POST /tts` and `/tts/dialogue` both take an optional `title`).
-It's sanitized for the filesystem and deduplicated against existing files
-(`My Clip.wav`, `My Clip_2.wav`, ...), so two generations never overwrite
-each other. Leave it blank and the file is named `tts_<date>_<time>`
-(minute precision) instead.
-
-Generating no longer autoplays the result - a dialog pops up once the audio
-is ready, showing the file it was saved as (read-only, for confirmation) with
-a "Play now" button. The player and download link below the text box are
-also populated either way, so you can grab the file without opening the
-dialog.
-
-## Converting an existing file
-
-The dashboard's "Convert an existing file" drop zone (drag a file in, or
-click to browse) re-encodes an existing WAV/MP3/FLAC/OGG file to a different
-format without running Kokoro at all (`POST /tts/convert`, taking `file` and
-`output_format`) - useful when you already have the audio you want and only
-need a different format. Uploads are capped at 100MB and converted via
-`ffmpeg`, so it requires the same `ffmpeg` install as MP3/OGG generation
-above.
-
-## License and attribution
-
-Kokoro-82M's weights and inference code are released by
-[hexgrad](https://huggingface.co/hexgrad) under the **Apache License 2.0**.
-This project uses the `kokoro`/`misaki` packages and the model weights
-unmodified under that license - see the
-[model card](https://huggingface.co/hexgrad/Kokoro-82M) for full terms.
-
-
-# 🔄 Switching Ollama Models
-
-## Pull a new model
-
-```
-ollama pull llama3:8b
-```
-
-## Change model in code
-
-In `core/llm.py` or wherever you call Ollama:
-
-```python
-MODEL = "mistral"
-```
-
-Change to:
-
-```python
-MODEL = "llama3:8b"
-```
-
----
-
-## Recommended Models
-
-| Model     | Notes              |
-| --------- | ------------------ |
-| mistral   | fast, lightweight  |
-| llama3:8b | better reasoning   |
-| mixtral   | stronger but heavy |
-
----
-
-# 🔁 Agent Flow
-
-1. User input
-2. LLM decides next action
-3. Permission check
-4. Tool executes
-5. Result fed back to LLM
-6. Repeat until complete
-
----
-
-# 🧪 Example Usage
+## Examples
 
 ```
 "What is in the news in Brazil?"
@@ -350,18 +131,7 @@ MODEL = "llama3:8b"
 "Summarize this file"
 ```
 
----
+## Limitations
 
-# ⚠️ Known Limitations
-
-- No persistent memory yet
-- No true web browsing (search + summarize only)
-
-
----
-
-# ✅ Summary
-
-This project is a modular, local-first AI agent capable of safe tool use, multi-step reasoning, and code interaction. It provides a strong foundation for building more advanced autonomous systems while maintaining control, transparency, and security.
-
----
+- No persistent memory
+- Web access is search (DuckDuckGo) plus plain-text page fetch: no JavaScript rendering, clicking or logins

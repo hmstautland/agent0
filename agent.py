@@ -7,9 +7,9 @@ from core.speech_to_text import listen
 from config.system_prompt import SYSTEM_PROMPT
 from core.logger import log_event
 from core.permission import request_permission, PermissionRequired
+from features.calendar.calendar import create_event, is_calendar_event_list, parse_create_command
 from tools.registry import TOOLS
-from tools.audio import describe_play_result, parse_play_command, play_audio_file
-from tools.calendar import create_event, parse_create_command
+from features.audio.player import describe_play_result, parse_play_command, play_audio_file
 from tools.files import parse_script_refactor_command
 
 # 🔁 Agent Flow
@@ -323,6 +323,18 @@ def _run_steps(user_input, permission_decisions):
         })
 
         yield {"event": "status", "message": f"Tool {action} completed."}
+
+        # A calendar event list is shown as the month-grid calendar, not fed
+        # back to the LLM for a text summary.
+        if is_calendar_event_list(result):
+            first = result[0]
+            yield {
+                "event": "final_response",
+                "response": "",
+                "show_calendar": {"year": first["date"].year, "month": first["date"].month},
+            }
+            return
+
         # Feed result back into context
         context += f"\nStep {step}:\nAction: {action}\nResult: {result}\n"
 
@@ -349,6 +361,10 @@ def run_agent(user_input, permission_decisions=None):
             print(event["message"])
         elif etype in ("final_response", "error"):
             final_response = event.get("response", event.get("message"))
+            if event.get("show_calendar"):
+                # Hand the month to the caller (core/agent_routes.py's /ask)
+                # so it can open the month-grid calendar.
+                final_response = {"show_calendar": event["show_calendar"]}
         elif etype == "permission_required":
             raise PermissionRequired(event["action"], event["args"], event["risk"], reason=event.get("reason"))
 

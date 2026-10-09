@@ -8,8 +8,13 @@ from core.auth import is_logged_in
 from core.permission import PermissionRequired
 from core.streaming import serialize_stream_event
 from core.templates import templates
-from tools.audio import describe_play_result, parse_play_command, play_audio_file
-from tools.calendar import create_event, get_calendar_view, is_calendar_show_command, parse_create_command
+from features.calendar.calendar import (
+    calendar_target_month,
+    create_event,
+    is_calendar_request,
+    parse_create_command,
+)
+from features.audio.player import describe_play_result, parse_play_command, play_audio_file
 from tools.notes import parse_note_command, save_note_text
 
 agent_router = APIRouter(dependencies=[Depends(is_logged_in)])
@@ -87,7 +92,6 @@ async def ask(request: Request):
         if shortcut is not None:
             return templates.TemplateResponse(name="index.html", request=request, context={
                 "response": shortcut,
-                "calendar_data": None
             })
 
         # Shortcut: "play ..." requests, bypass the LLM and hand the web UI a
@@ -96,15 +100,17 @@ async def ask(request: Request):
         if audio_result is not None:
             return templates.TemplateResponse(name="index.html", request=request, context={
                 "response": describe_play_result(audio_result),
-                "calendar_data": None,
                 "audio_data": audio_result,
             })
 
-        # Shortcut: if user asked to see their calendar, bypass LLM and show structured events
-        if is_calendar_show_command(user_input):
+        # Shortcut: if the user asked to see their calendar, bypass the LLM
+        # and open the month-grid calendar (features/calendar), which fetches
+        # its own data from GET /calendar/month.
+        if is_calendar_request(user_input):
+            year, month = calendar_target_month(user_input)
             return templates.TemplateResponse(name="index.html", request=request, context={
                 "response": "",
-                "calendar_data": get_calendar_view(user_input),
+                "calendar_month": {"year": year, "month": month},
             })
 
         permission_decisions = create_permission_decisions(form)
@@ -123,12 +129,19 @@ async def ask(request: Request):
                 input=user_input,
             )
 
+        # A read_calendar tool result (chosen by the LLM) is shown as the
+        # month-grid calendar instead of being flattened into text.
+        calendar_month = None
+        if isinstance(response, dict) and response.get("show_calendar"):
+            calendar_month = response["show_calendar"]
+            response = ""
+
         if not isinstance(response, str):
             response = json.dumps(response, indent=2)
 
         return templates.TemplateResponse(name="index.html", request=request, context={
             "response": response,
-            "calendar_data": None
+            "calendar_month": calendar_month,
         })
 
     except Exception as e:
@@ -164,12 +177,14 @@ async def ask_stream(request: Request):
             }) + "\n"
         return StreamingResponse(audio_gen(), media_type="application/x-ndjson")
 
-    if is_calendar_show_command(user_input):
+    if is_calendar_request(user_input):
+        year, month = calendar_target_month(user_input)
+
         async def calendar_gen():
             yield serialize_stream_event({
                 "event": "final_response",
                 "response": "",
-                "calendar_data": get_calendar_view(user_input),
+                "show_calendar": {"year": year, "month": month},
             }) + "\n"
         return StreamingResponse(calendar_gen(), media_type="application/x-ndjson")
 

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parents[2]  # project root (features/audio/ -> features/ -> root)
 
 AUDIO_DIR = BASE_DIR / "local_storage" / "audio"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)

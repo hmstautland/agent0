@@ -433,7 +433,7 @@ async function searchSavedAudio() {
 
   // Deliberately don't fall back to listing every saved file here - that's
   // only wanted for the chat "play ..." tool's own disambiguation (see
-  // tools/audio.find_audio_files), not for this panel, which should stay
+  // features/audio/player.find_audio_files), not for this panel, which should stay
   // empty until the user actually searches for something.
   if (!query) {
     results.innerHTML = "";
