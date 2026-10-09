@@ -1,14 +1,12 @@
 import os
 import re
 
+from core.templates import TEMPLATE_DIRS
 from jinja2 import Environment, FileSystemLoader, TemplateSyntaxError
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-TEMPLATE_DIR = "templates"
 
-# Feature folders ship their own partials; keep in sync with core/templates.py
-TEMPLATE_DIRS = [TEMPLATE_DIR, "features/audio/templates"]
 
 # URLs the app serves from disk, mapped to the directory that backs them
 # Ordered most specific first - the first matching prefix wins, so a feature's

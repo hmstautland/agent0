@@ -4,24 +4,9 @@
     <title>Agent UI</title>
 
     <link rel="stylesheet" href="/static/styles.css" />
-    <link rel="stylesheet" href="/static/calendar/calendar.css" />
-    <link rel="stylesheet" href="/static/audio/audio.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <link
-      rel="icon"
-      type="image/png"
-      href="/favicon/favicon-96x96.png"
-      sizes="96x96"
-    />
-    <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg" />
-    <link rel="shortcut icon" href="/favicon/favicon.ico" />
-    <link
-      rel="apple-touch-icon"
-      sizes="180x180"
-      href="/favicon/apple-touch-icon.png"
-    />
-    <link rel="manifest" href="/favicon/site.webmanifest" />
+    {% include "components/favicons.html" %}
   </head>
   <body>
     <canvas id="starfield"></canvas>
@@ -57,63 +42,19 @@
         >
           🎤
         </button>
-        <button
-          type="button"
-          class="icon-btn tts-btn"
-          onclick="toggleTtsDashboard()"
-          aria-haspopup="true"
-          aria-expanded="false"
-          aria-controls="tts-dashboard"
-          title="Text to speech"
-        >
-          🗣️
-        </button>
+        {% include "audio/tts_button.html" %}
       </form>
 
       {% include "audio/tts_dashboard.html" %}
 
-      <div id="stream-audio" class="response-card hidden"></div>
+      {% include "audio/stream_audio.html" %}
 
       <div id="stream-error" class="error-card hidden">
         <h3 style="color: red">Error :</h3>
         <pre id="stream-error-text"></pre>
       </div>
 
-      <section
-        id="stream-permission"
-        class="permission-card hidden"
-        style="border: 1px solid #f99; padding: 12px; margin-top: 20px"
-      >
-        <h3 style="color: darkorange">Permission Required</h3>
-        <p><strong>Action:</strong> <span id="perm-action"></span></p>
-        <p><strong>Risk:</strong> <span id="perm-risk"></span></p>
-        <p><strong>Reason:</strong> <span id="perm-reason"></span></p>
-        <p><strong>Arguments:</strong></p>
-        <pre id="perm-args"></pre>
-
-        <form id="stream-permission-form" method="post" action="/ask">
-          <input type="hidden" name="input" id="perm-input" value="" />
-          <input
-            type="hidden"
-            name="permission_action"
-            id="perm-action-field"
-            value=""
-          />
-          <input
-            type="hidden"
-            name="permission_args"
-            id="perm-args-field"
-            value=""
-          />
-          <input
-            type="hidden"
-            name="permission_risk"
-            id="perm-risk-field"
-            value=""
-          />
-          <div id="perm-buttons"></div>
-        </form>
-      </section>
+      {% include "components/permission_card.html" %}
 
       {% if response %}
       <div id="server-response-card" class="response-card">
@@ -122,46 +63,9 @@
         <pre>{{ response }}</pre>
       </div>
 
-      {% endif %} {% if audio_data %}
-      <div class="response-card">
-        <section>{% include "audio/audio_play.html" %}</section>
-      </div>
-
       {% endif %}
 
-      <section id="calendar-card" class="response-card calendar-card hidden">
-        <div class="calendar-card-header">
-          <button
-            type="button"
-            id="calendar-prev-btn"
-            class="icon-btn calendar-nav-btn"
-            aria-label="Previous month"
-          >
-            ‹
-          </button>
-          <h2 id="calendar-title"></h2>
-          <button
-            type="button"
-            id="calendar-next-btn"
-            class="icon-btn calendar-nav-btn"
-            aria-label="Next month"
-          >
-            ›
-          </button>
-          <button
-            type="button"
-            id="calendar-close-btn"
-            class="icon-btn calendar-close-btn"
-            aria-label="Close calendar"
-          >
-            ×
-          </button>
-        </div>
-
-        <div id="calendar-weekdays" class="calendar-weekdays"></div>
-        <div id="calendar-days" class="calendar-days"></div>
-        <div id="calendar-event-list" class="calendar-event-list"></div>
-      </section>
+      {% include "calendar/calendar_card.html" %}
 
       {% if error %}
       <div class="error-card">
@@ -169,52 +73,12 @@
         <pre>{{ error }}</pre>
       </div>
 
-      {% endif %} {% if permission %}
-      <section style="border: 1px solid #f99; padding: 12px; margin-top: 20px">
-        <h3 style="color: darkorange">Permission Required</h3>
-        <p><strong>Action:</strong> {{ permission.action }}</p>
-        <p><strong>Risk:</strong> {{ permission.risk }}</p>
-        <p><strong>Reason:</strong> {{ permission.reason }}</p>
-        <p><strong>Arguments:</strong></p>
-        <pre>{{ permission.args }}</pre>
-
-        <form method="post" action="/ask">
-          <input type="hidden" name="input" value="{{ input }}" />
-          <input
-            type="hidden"
-            name="permission_action"
-            value="{{ permission.action }}"
-          />
-          <input
-            type="hidden"
-            name="permission_args"
-            value="{{ permission.args|e }}"
-          />
-          <input
-            type="hidden"
-            name="permission_risk"
-            value="{{ permission.risk }}"
-          />
-          <button type="submit" name="permission_decision" value="y">
-            Approve
-          </button>
-          <button type="submit" name="permission_decision" value="n">
-            Reject
-          </button>
-        </form>
-      </section>
       {% endif %}
     </div>
     <script src="/static/starfield.js"></script>
     <script src="/static/speech.js"></script>
-    <script src="/static/audio/tts.js"></script>
-    <script src="/static/calendar/calendar.js"></script>
-    <script src="/static/audio/audio-player.js"></script>
+    {% include "audio/scripts.html" %}
+    {% include "calendar/scripts.html" %}
     <script src="/static/chat.js"></script>
-    {% if calendar_month %}
-    <script>
-      loadCalendarMonth({{ calendar_month.year }}, {{ calendar_month.month }});
-    </script>
-    {% endif %}
   </body>
 </html>

@@ -41,7 +41,6 @@ async function showPermissionRequest(eventData) {
   const permActionField = document.getElementById("perm-action-field");
   const permArgsField = document.getElementById("perm-args-field");
   const permRiskField = document.getElementById("perm-risk-field");
-  const permButtons = document.getElementById("perm-buttons");
 
   permAction.textContent = eventData.action;
   permRisk.textContent = eventData.risk;
@@ -52,11 +51,6 @@ async function showPermissionRequest(eventData) {
   permActionField.value = eventData.action;
   permArgsField.value = JSON.stringify(eventData.args || {});
   permRiskField.value = eventData.risk;
-
-  permButtons.innerHTML = `
-    <button type="submit" name="permission_decision" value="y">Approve</button>
-    <button type="submit" name="permission_decision" value="n">Reject</button>
-  `;
 
   permSection.classList.remove("hidden");
 }

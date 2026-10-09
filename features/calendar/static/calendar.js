@@ -135,3 +135,8 @@ document.getElementById("calendar-next-btn").addEventListener("click", () => {
 document.getElementById("calendar-close-btn").addEventListener("click", () => {
   calendarCard.classList.add("hidden");
 });
+
+// The server pre-selects a month (plain /ask page) via data attributes on the card.
+if (calendarCard.dataset.initialYear) {
+  loadCalendarMonth(calendarCard.dataset.initialYear, calendarCard.dataset.initialMonth);
+}

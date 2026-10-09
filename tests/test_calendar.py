@@ -120,7 +120,7 @@ def test_ask_calendar_shortcut_opens_the_month_grid(monkeypatch, tmp_path):
     assert response.status_code == 200
     assert 'id="calendar-card"' in response.text
     now = datetime.now()
-    assert f"loadCalendarMonth({now.year}, {now.month})" in response.text
+    assert f'data-initial-year="{now.year}" data-initial-month="{now.month}"' in response.text
 
 
 def test_ask_stream_calendar_shortcut_emits_show_calendar_event(monkeypatch, tmp_path):

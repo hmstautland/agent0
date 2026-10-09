@@ -24,11 +24,11 @@ OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "16384"))
 OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "600"))
 
 
-def query_llm(prompt, model=None):
+def query_llm(prompt, model=None, stream=False):
     payload = {
         "model": model or OLLAMA_MODEL,
         "prompt": prompt,
-        "stream": False,
+        "stream": stream,
         "options": {"num_ctx": OLLAMA_NUM_CTX},
     }
 
