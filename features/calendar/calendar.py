@@ -179,7 +179,7 @@ def create_event(title, start, end=None, description=None):
 
     os.makedirs(os.path.dirname(CALENDAR_FILE), exist_ok=True)
     with open(CALENDAR_FILE, "w", encoding="utf-8") as f:
-        f.writelines(calendar)
+        f.writelines(calendar.serialize_iter())
 
     return f"Event '{title}' added from {event.begin} to {event.end}"
 
