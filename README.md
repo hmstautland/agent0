@@ -87,6 +87,13 @@ agent0/
 
 ## 1. Activate Virtual Environment
 
+### Linux(CatchyOS)
+```
+python -m venv venv
+source venv/bin/activate.fish 
+(or look in folder if using other terminals)
+```
+
 ### PowerShell:
 
 ```
@@ -101,11 +108,46 @@ venv\Scripts\activate.bat
 
 ---
 
+## Install
+```
+pip install -r requirements.txt
+```
+
 ## 2. Start Ollama
 
+Ollama runs one server that serves every model you have pulled - the model is
+chosen per request by the agent, not by the server. So start the server and pull
+the two models the agent uses (`ollama run <model>` is only an interactive chat
+client and is not needed by the app):
+
 ```
-ollama run mistral
+ollama serve            # usually already running as a service
+ollama pull qwen3:4b          # light, for direct answers
+ollama pull qwen3-coder:30b   # heavy, for file/code work
 ```
+
+### Model settings (environment variables)
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `OLLAMA_MODEL` | `qwen3:8b` | Light model for direct answers (the local-first step) |
+| `OLLAMA_CODE_MODEL` | `qwen3-coder:30b` | Heavier model used once a request escalates to the tool loop (reading/editing files) |
+| `OLLAMA_NUM_CTX` | `16384` | Context window. Ollama's own default is 4096, which is too small to hold a source file plus the instructions - the overflow is silently dropped and the model starts replying with prose or invented tool names |
+| `OLLAMA_TIMEOUT` | `600` | Request timeout in seconds |
+
+Override either one per shell, for example to run everything on the light model:
+
+```
+set -x OLLAMA_CODE_MODEL qwen3:4b   # fish
+```
+
+Measured on a Ryzen AI Max+ 395 (CPU only), which is why `qwen3:4b` is the
+default over `mistral:7b`:
+
+| model | generation | prompt eval | admits it needs the file tools |
+| --- | --- | --- | --- |
+| `qwen3:4b` | 34 tok/s | 206 tok/s | yes |
+| `mistral:7b` | 24 tok/s | 100 tok/s | no - invents an answer instead |
 
 ---
 
@@ -142,6 +184,118 @@ pause
 ```
 
 ---
+
+# 🗣️ Text-to-Speech (Kokoro-82M)
+
+The TTS dashboard (open it via the 🗣️ icon in the chat bar) generates speech
+with [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M), an 82M-parameter
+open-weight TTS model.
+
+### FFmpeg (for MP3 / OGG output)
+
+WAV and FLAC are produced natively (no external tools, via `soundfile`). MP3
+and OGG/Opus are encoded from that WAV with `ffmpeg`, which must be on
+`PATH`:
+
+```
+sudo pacman -S ffmpeg      # Arch / CachyOS
+sudo apt install ffmpeg    # Debian/Ubuntu
+```
+
+## CPU / CUDA configuration
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `TTS_DEVICE` | `auto` | `auto` picks CUDA if available, otherwise CPU. Set to `cpu` or `cuda` to force one. |
+| `KOKORO_CACHE_DIR` | `models/kokoro` | Where Kokoro's downloaded model weights are cached. |
+
+Each accent's model is loaded once, on first use, and
+reused for every request after that - it is never reloaded per-request.
+
+## Model cache behavior
+
+On first use of an accent, Kokoro downloads its weights from Hugging Face
+into `KOKORO_CACHE_DIR` (`models/kokoro` by default). Every request after
+that is fully offline.
+
+## Available voices
+
+Only British English voices from the official Kokoro-82M voice pack are
+offered (`GET /tts/voices` lists them):
+
+- **Female:** Alice, Emma, Isabella, Lily
+- **Male:** Daniel, Fable, George, Lewis
+
+## Two-speaker dialogue
+
+Enable "Two-speaker dialogue" in the TTS dashboard to turn a script into a
+conversation between two voices in one audio file (`POST /tts/dialogue`,
+taking `text`, `voice_a`, `voice_b`, `speed`, `output_format`).
+
+Prefix every line of the input with `A:` or `B:` to mark who's speaking:
+
+```
+A: Have you tried the new coffee place?
+B: Not yet, is it any good?
+A: Really good, you should go.
+```
+
+Each line is synthesized with its speaker's selected voice and the turns are
+concatenated with a short silence gap between them. Consecutive lines from
+the same speaker are merged into one turn; a line with no `A:`/`B:` prefix is
+rejected with a clear error. The dashboard defaults Speaker A to Isabella and
+Speaker B to George.
+
+## Speaking a document
+
+Drag a `.txt`, `.md`/`.markdown` or `.docx` file onto the dashboard's text
+box - or click the "Browse…" button next to its label - to fill it with that
+file's text (`POST /tts/extract-text`, taking `file`), no copy-pasting
+needed. Legacy `.doc` isn't supported (there's no good pure-Python reader
+for it); save as `.docx` instead. Uploads are capped at 20MB.
+
+For `.md`/`.markdown` files, Markdown syntax is flattened to plain,
+speakable text first - headings, bold/italic markers, inline code
+backticks, link brackets, list bullets, blockquote markers and horizontal
+rules are all stripped (keeping their content) so Kokoro reads "Architecture"
+instead of "hash hash Architecture". This only applies to `.md` uploads, not
+typed/pasted text, since a bare `#` or `*` there is as likely to be a
+hashtag or literal emphasis as Markdown - and it never touches characters
+with no Markdown meaning, such as `@` in an email address.
+
+## Naming a generated file
+
+The optional "Title / store as" field above the text box sets the generated
+file's name (`POST /tts` and `/tts/dialogue` both take an optional `title`).
+It's sanitized for the filesystem and deduplicated against existing files
+(`My Clip.wav`, `My Clip_2.wav`, ...), so two generations never overwrite
+each other. Leave it blank and the file is named `tts_<date>_<time>`
+(minute precision) instead.
+
+Generating no longer autoplays the result - a dialog pops up once the audio
+is ready, showing the file it was saved as (read-only, for confirmation) with
+a "Play now" button. The player and download link below the text box are
+also populated either way, so you can grab the file without opening the
+dialog.
+
+## Converting an existing file
+
+The dashboard's "Convert an existing file" drop zone (drag a file in, or
+click to browse) re-encodes an existing WAV/MP3/FLAC/OGG file to a different
+format without running Kokoro at all (`POST /tts/convert`, taking `file` and
+`output_format`) - useful when you already have the audio you want and only
+need a different format. Uploads are capped at 100MB and converted via
+`ffmpeg`, so it requires the same `ffmpeg` install as MP3/OGG generation
+above.
+
+## License and attribution
+
+Kokoro-82M's weights and inference code are released by
+[hexgrad](https://huggingface.co/hexgrad) under the **Apache License 2.0**.
+This project uses the `kokoro`/`misaki` packages and the model weights
+unmodified under that license - see the
+[model card](https://huggingface.co/hexgrad/Kokoro-82M) for full terms.
+
 
 # 🔄 Switching Ollama Models
 
@@ -200,10 +354,9 @@ MODEL = "llama3:8b"
 
 # ⚠️ Known Limitations
 
-- Small models may hallucinate code
-- Tool arguments may need normalization
 - No persistent memory yet
 - No true web browsing (search + summarize only)
+
 
 ---
 

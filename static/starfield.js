@@ -6,13 +6,24 @@ canvas.height = window.innerHeight;
 
 const stars = [];
 const STAR_COUNT = 600;
+const SPEED = 3;
+const BODY_COLORS = ["#c9885f", "#7fb3d5", "#e0b34c", "#a569bd", "#cfcfcf"];
 
-for (let i = 0; i < STAR_COUNT; i++) {
-  stars.push({
+function makeStar() {
+  const isBody = Math.random() < 0.04;
+
+  return {
     x: Math.random() * canvas.width - canvas.width / 2,
     y: Math.random() * canvas.height - canvas.height / 2,
     z: Math.random() * canvas.width,
-  });
+    isBody,
+    color: isBody ? BODY_COLORS[Math.floor(Math.random() * BODY_COLORS.length)] : "white",
+    sizeMultiplier: isBody ? 2 + Math.random() * 1.5 : 1,
+  };
+}
+
+for (let i = 0; i < STAR_COUNT; i++) {
+  stars.push(makeStar());
 }
 
 function animate() {
@@ -20,19 +31,20 @@ function animate() {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   for (let star of stars) {
-    star.z -= 8;
+    star.z -= SPEED;
 
     if (star.z <= 0) {
+      Object.assign(star, makeStar());
       star.z = canvas.width;
     }
 
     const x = (star.x / star.z) * canvas.width;
     const y = (star.y / star.z) * canvas.width;
 
-    const radius = (1 - star.z / canvas.width) * 3;
+    const radius = (1 - star.z / canvas.width) * 3 * star.sizeMultiplier;
 
     ctx.beginPath();
-    ctx.fillStyle = "white";
+    ctx.fillStyle = star.color;
     ctx.arc(
       x + canvas.width / 2,
       y + canvas.height / 2,

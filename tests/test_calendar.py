@@ -1,12 +1,13 @@
 from datetime import datetime
 
+import core.auth as auth_mod
 import core.ui as ui_mod
 import features.calendar.calendar as calendar_mod
 from fastapi.testclient import TestClient
 
 
 def _logged_in_client(monkeypatch):
-    monkeypatch.setattr(ui_mod, "PASSWORD", "testpass")
+    monkeypatch.setattr(auth_mod, "PASSWORD", "testpass")
     client = TestClient(ui_mod.app)
     client.post("/login", data={"password": "testpass"})
     return client
@@ -49,22 +50,22 @@ def test_events_in_month_sorts_by_start_time(monkeypatch, tmp_path):
     assert names == ["Earlier", "Later"]
 
 
-# --- core.ui helpers ---------------------------------------------------------
+# --- features.calendar.calendar helpers ---------------------------------------------------------
 
 def test_is_calendar_request_matches_expected_phrasings():
-    assert ui_mod.is_calendar_request("can I view my calendar")
-    assert ui_mod.is_calendar_request("show calendar please")
-    assert ui_mod.is_calendar_request("what's on my calendar today")
-    assert not ui_mod.is_calendar_request("what's the weather today")
+    assert calendar_mod.is_calendar_request("can I view my calendar")
+    assert calendar_mod.is_calendar_request("show calendar please")
+    assert calendar_mod.is_calendar_request("what's on my calendar today")
+    assert not calendar_mod.is_calendar_request("what's the weather today")
 
 
 def test_calendar_target_month_defaults_to_current_month():
     now = datetime.now()
-    assert ui_mod._calendar_target_month("show my calendar") == (now.year, now.month)
+    assert calendar_mod.calendar_target_month("show my calendar") == (now.year, now.month)
 
 
 def test_calendar_target_month_uses_a_mentioned_day_and_month():
-    year, month = ui_mod._calendar_target_month("what's on 17 may")
+    year, month = calendar_mod.calendar_target_month("what's on 17 may")
     assert month == 5
 
 
