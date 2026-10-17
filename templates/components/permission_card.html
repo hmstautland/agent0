@@ -1,6 +1,8 @@
 {# Approval prompt for a tool call. One card serves both paths: chat.js fills
    it in for streamed (/ask_stream) requests, and the plain /ask page renders
-   it pre-filled and visible when `permission` is set. #}
+   it pre-filled and visible when `permission` is set. The form only sends
+   the parked run's id (core/runs.py) - the server runs exactly the call
+   shown here. chat.js intercepts the submit and resumes over /ask_stream. #}
 {% set p = permission or {} %}
 <section
   id="stream-permission"
@@ -16,12 +18,12 @@
   </p>
   <p><strong>Arguments:</strong></p>
   <pre id="perm-args">{{ p.args }}</pre>
+  <p id="perm-external"{% if not p.external %} class="hidden"{% endif %}>
+    This tool sends data off this machine. If you approve, it won't ask again until you log out.
+  </p>
 
   <form id="stream-permission-form" method="post" action="/ask">
-    <input type="hidden" name="input" id="perm-input" value="{{ input }}" />
-    <input type="hidden" name="permission_action" id="perm-action-field" value="{{ p.action }}" />
-    <input type="hidden" name="permission_args" id="perm-args-field" value="{{ p.args }}" />
-    <input type="hidden" name="permission_risk" id="perm-risk-field" value="{{ p.risk }}" />
+    <input type="hidden" name="run_id" id="perm-run-id" value="{{ p.run_id }}" />
     <div id="perm-buttons">
       <button type="submit" name="permission_decision" value="y">Approve</button>
       <button type="submit" name="permission_decision" value="n">Reject</button>

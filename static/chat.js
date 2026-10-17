@@ -31,26 +31,26 @@ function clearStreamUI() {
   streamError.classList.add("hidden");
 }
 
-async function showPermissionRequest(eventData) {
-  const permSection = document.getElementById("stream-permission");
-  const permAction = document.getElementById("perm-action");
-  const permRisk = document.getElementById("perm-risk");
-  const permReason = document.getElementById("perm-reason");
-  const permArgs = document.getElementById("perm-args");
-  const permInput = document.getElementById("perm-input");
-  const permActionField = document.getElementById("perm-action-field");
-  const permArgsField = document.getElementById("perm-args-field");
-  const permRiskField = document.getElementById("perm-risk-field");
+const permSection = document.getElementById("stream-permission");
+const permForm = document.getElementById("stream-permission-form");
 
-  permAction.textContent = eventData.action;
-  permRisk.textContent = eventData.risk;
-  permReason.textContent = eventData.reason || "No reason provided.";
-  permArgs.textContent = JSON.stringify(eventData.args || {}, null, 2);
+// Set when a stream delivers a final answer, an error or a permission card -
+// a stream that ends without one of these was cut off.
+let streamFinished = false;
 
-  permInput.value = eventData.input || "";
-  permActionField.value = eventData.action;
-  permArgsField.value = JSON.stringify(eventData.args || {});
-  permRiskField.value = eventData.risk;
+function showError(message) {
+  thinkingImg.classList.add("hidden");
+  streamErrorText.textContent = message;
+  streamError.classList.remove("hidden");
+}
+
+function showPermissionRequest(eventData) {
+  document.getElementById("perm-action").textContent = eventData.action;
+  document.getElementById("perm-risk").textContent = eventData.risk;
+  document.getElementById("perm-reason").textContent = eventData.reason || "No reason provided.";
+  document.getElementById("perm-args").textContent = JSON.stringify(eventData.args || {}, null, 2);
+  document.getElementById("perm-external").classList.toggle("hidden", !eventData.external);
+  document.getElementById("perm-run-id").value = eventData.run_id;
 
   permSection.classList.remove("hidden");
 }
@@ -58,12 +58,24 @@ async function showPermissionRequest(eventData) {
 async function handleAskStream(formData) {
   clearStreamUI();
   responseCard?.classList.add("hidden");
-  document.getElementById("stream-permission").classList.add("hidden");
+  permSection.classList.add("hidden");
+  streamFinished = false;
 
-  const res = await fetch("/ask_stream", {
-    method: "POST",
-    body: formData,
-  });
+  let res;
+  try {
+    res = await fetch("/ask_stream", {
+      method: "POST",
+      body: formData,
+    });
+  } catch (error) {
+    showError(`Could not reach the server: ${error.message}`);
+    return;
+  }
+
+  if (!res.ok) {
+    showError(`The server answered ${res.status} ${res.statusText}. Try again, or reload the page if you were logged out.`);
+    return;
+  }
 
   if (!res.body) {
     showStatus("LLM stream not available.");
@@ -74,22 +86,27 @@ async function handleAskStream(formData) {
   const decoder = new TextDecoder("utf-8");
   let buffer = "";
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
 
-    const lines = buffer.split("\n");
-    buffer = lines.pop();
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
 
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try {
-        handleStreamEvent(JSON.parse(line));
-      } catch (error) {
-        console.error("Stream parse error", error, line);
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          handleStreamEvent(JSON.parse(line));
+        } catch (error) {
+          console.error("Stream parse error", error, line);
+        }
       }
     }
+  } catch (error) {
+    showError(`The connection was lost: ${error.message}`);
+    return;
   }
 
   if (buffer.trim()) {
@@ -99,9 +116,17 @@ async function handleAskStream(formData) {
       console.error("Stream parse error", error, buffer);
     }
   }
+
+  if (!streamFinished) {
+    showError("The response ended before the agent finished. Check the server log and try again.");
+  }
 }
 
 function handleStreamEvent(event) {
+  if (["final_response", "error", "permission_required"].includes(event.event)) {
+    streamFinished = true;
+  }
+
   if (event.event === "status") {
     showStatus(event.message);
   } else if (event.event === "final_response") {
@@ -114,13 +139,11 @@ function handleStreamEvent(event) {
       streamCard.classList.add("hidden");
     }
     if (event.show_calendar) {
-      loadCalendarMonth(event.show_calendar.year, event.show_calendar.month);
+      loadCalendarMonth(event.show_calendar.year, event.show_calendar.month, event.show_calendar.day);
     }
     renderAudioResult(event.audio);
   } else if (event.event === "error") {
-    thinkingImg.classList.add("hidden");
-    streamErrorText.textContent = event.message || "Unknown error";
-    streamError.classList.remove("hidden");
+    showError(event.message || "Unknown error");
   } else if (event.event === "permission_required") {
     thinkingImg.classList.add("hidden");
     showPermissionRequest(event);
@@ -130,6 +153,15 @@ function handleStreamEvent(event) {
 chatForm.addEventListener("submit", async function (e) {
   e.preventDefault();
   const formData = new FormData(chatForm);
+  await handleAskStream(formData);
+});
+
+// Approve/Reject continues the parked run over the stream, so progress keeps
+// showing instead of falling back to the full-page /ask.
+permForm.addEventListener("submit", async function (e) {
+  e.preventDefault();
+  const formData = new FormData(permForm);
+  formData.set("permission_decision", e.submitter?.value === "y" ? "y" : "n");
   await handleAskStream(formData);
 });
 

@@ -28,13 +28,14 @@ function calendarFormatTime(isoString) {
   return new Date(isoString).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-async function loadCalendarMonth(year, month) {
+// highlightDay (optional): a day to mark and open, e.g. a just-created event's
+async function loadCalendarMonth(year, month, highlightDay) {
   const res = await fetch(`/calendar/month?year=${year}&month=${month}`);
   const data = await res.json();
-  renderCalendarMonth(data);
+  renderCalendarMonth(data, Number(highlightDay) || null);
 }
 
-function renderCalendarMonth(data) {
+function renderCalendarMonth(data, highlightDay) {
   calendarYear = data.year;
   calendarMonth = data.month;
   calendarCard.classList.remove("hidden");
@@ -68,6 +69,7 @@ function renderCalendarMonth(data) {
     const classes = ["calendar-day"];
     if (isToday) classes.push("calendar-day-today");
     if (dayEvents.length) classes.push("calendar-day-has-events");
+    if (day === highlightDay) classes.push("calendar-day-highlight");
 
     const visibleEvents = dayEvents
       .slice(0, 2)
@@ -93,6 +95,9 @@ function renderCalendarMonth(data) {
   });
 
   calendarEventListEl.innerHTML = "";
+  if (highlightDay && eventsByDay[highlightDay]) {
+    showCalendarDayEvents(highlightDay, eventsByDay[highlightDay]);
+  }
 }
 
 function showCalendarDayEvents(day, events) {
@@ -138,5 +143,5 @@ document.getElementById("calendar-close-btn").addEventListener("click", () => {
 
 // The server pre-selects a month (plain /ask page) via data attributes on the card.
 if (calendarCard.dataset.initialYear) {
-  loadCalendarMonth(calendarCard.dataset.initialYear, calendarCard.dataset.initialMonth);
+  loadCalendarMonth(calendarCard.dataset.initialYear, calendarCard.dataset.initialMonth, calendarCard.dataset.initialDay);
 }
