@@ -4,76 +4,109 @@
     <title>Agent UI</title>
 
     <link rel="stylesheet" href="/static/styles.css" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
 
     {% include "components/favicons.html" %}
   </head>
   <body>
     <canvas id="starfield"></canvas>
-    <div class="main-container">
-      <h1 class="logo">Agent 0</h1>
+    {# Chat layout: header, a scrolling feed of cards, and the input docked at
+       the bottom. Cards are ordered oldest-context first, so the newest
+       answer / prompt always sits right above the input. chat.js keeps the
+       feed scrolled to the latest card. #}
+    <div class="app-shell">
+      <header class="app-header">
+        <h1 class="logo">Agent 0</h1>
+      </header>
 
-      <div id="stream-card" class="response-card hidden">
-        <h3 id="stream-heading"></h3>
-        <img
-          id="thinking-img"
-          class="thinking-img hidden"
-          src="/media/thinking.png"
-          alt="Thinking..."
-        />
-        <pre id="stream-output"></pre>
-      </div>
+      <main id="chat-feed" class="chat-feed">
+        <div class="chat-feed-inner">
+          {% include "calendar/calendar_card.html" %}
 
-      <form id="main-chat-form" method="post" action="/ask" class="chat-form">
-        <button type="button" class="icon-btn add-btn">+</button>
-        <input
-          type="text"
-          name="input"
-          id="input"
-          placeholder="007 is on a break so..."
-          autocomplete="on"
-        />
+          {% if response %}
+          <div id="server-response-card" class="response-card">
+            <h3>Response :</h3>
 
-        <button type="submit" class="send-btn">➜</button>
-        <button
-          type="button"
-          class="icon-btn mic-btn"
-          onclick="toggleRecording()"
-        >
-          🎤
-        </button>
-        {% include "audio/tts_button.html" %}
-      </form>
+            <pre>{{ response }}</pre>
+          </div>
+          {% endif %}
 
-      {% include "audio/tts_dashboard.html" %}
+          {% if error %}
+          <div class="error-card">
+            <h3 style="color: red">Error :</h3>
+            <pre>{{ error }}</pre>
+          </div>
+          {% endif %}
 
-      {% include "audio/stream_audio.html" %}
+          <div id="stream-card" class="response-card hidden" aria-live="polite">
+            <h3 id="stream-heading"></h3>
+            {# While the model works: the image plus its live output (reasoning
+               and reply as Ollama streams them), boxed to the image's height. #}
+            <div id="thinking-row" class="thinking-row hidden">
+              <img
+                id="thinking-img"
+                class="thinking-img"
+                src="/media/thinking.png"
+                alt="Thinking..."
+              />
+              <div class="thinking-stream">
+                <pre
+                  id="thinking-stream"
+                  class="thinking-stream-text"
+                  aria-live="off"
+                  tabindex="0"
+                ></pre>
+              </div>
+            </div>
+            <pre id="stream-output"></pre>
+          </div>
 
-      <div id="stream-error" class="error-card hidden">
-        <h3 style="color: red">Error :</h3>
-        <pre id="stream-error-text"></pre>
-      </div>
+          {% include "audio/stream_audio.html" %}
 
-      {% include "components/permission_card.html" %}
+          <div id="stream-error" class="error-card hidden" aria-live="polite">
+            <h3 style="color: red">Error :</h3>
+            <pre id="stream-error-text"></pre>
+          </div>
 
-      {% if response %}
-      <div id="server-response-card" class="response-card">
-        <h3>Response :</h3>
+          {% include "components/permission_card.html" %}
 
-        <pre>{{ response }}</pre>
-      </div>
+          {% include "audio/tts_dashboard.html" %}
+        </div>
+      </main>
 
-      {% endif %}
+      <footer class="chat-dock">
+        <form id="main-chat-form" method="post" action="/ask" class="chat-form">
+          <button
+            type="button"
+            id="new-chat-btn"
+            class="icon-btn add-btn"
+            title="New chat - forget the earlier questions"
+            aria-label="New chat"
+          >
+            +
+          </button>
+          <input
+            type="text"
+            name="input"
+            id="input"
+            placeholder="007 is on a break so..."
+            autocomplete="on"
+          />
 
-      {% include "calendar/calendar_card.html" %}
-
-      {% if error %}
-      <div class="error-card">
-        <h3 style="color: red">Error :</h3>
-        <pre>{{ error }}</pre>
-      </div>
-
-      {% endif %}
+          <button type="submit" id="send-btn" class="send-btn" aria-label="Send" title="Send">➜</button>
+          <button
+            type="button"
+            class="icon-btn mic-btn"
+            onclick="toggleRecording()"
+          >
+            🎤
+          </button>
+          {% include "audio/tts_button.html" %}
+        </form>
+      </footer>
     </div>
     <script src="/static/starfield.js"></script>
     <script src="/static/speech.js"></script>

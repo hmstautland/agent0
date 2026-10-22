@@ -1,10 +1,13 @@
 import json
+import re
 import secrets
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
+import core.cancel as cancel
+import core.conversations as conversations
 from agent import resume_agent, stream_agent
 from core.auth import is_logged_in
 from core.logger import log_event
@@ -46,6 +49,18 @@ def grant_external(request: Request, action):
     request.session["external_grants"] = sorted(session_grants(request) | {action})
 
 
+def session_conversation(request: Request, new=False):
+    """This login session's conversation id (core/conversations.py). Logging out starts a new one.
+
+    Like grant_external, call it in the handler - the session cookie is
+    written with the response headers.
+    """
+    conversation_id = request.session.get("conversation_id")
+    if new or not conversation_id:
+        conversation_id = request.session["conversation_id"] = conversations.new_conversation()
+    return conversation_id
+
+
 def resume_events(request: Request, run_id, approved):
     """Events for continuing a parked run with the user's decision."""
     run = take(run_id, owner=session_owner(request))
@@ -63,7 +78,45 @@ def resume_events(request: Request, run_id, approved):
 
 
 def agent_events(request: Request, user_input):
-    return stream_agent(user_input, owner=session_owner(request), granted=session_grants(request))
+    """Events answering user_input: a shortcut's, or the agent's. Either way stored in the session's conversation."""
+    conversation_id = session_conversation(request)
+    shortcut = shortcut_events(user_input)
+    if shortcut is not None:
+        return conversations.record(shortcut, conversation_id, user_input)
+    return stream_agent(
+        user_input, owner=session_owner(request), granted=session_grants(request), conversation_id=conversation_id,
+    )
+
+
+def shortcut_events(user_input):
+    """Requests answered without the LLM, as a list of events - or None.
+
+    The local model isn't reliable at recognizing these need a specific tool
+    rather than answering "I can't do that" directly.
+    """
+    shortcut = shortcut_text_response(user_input)
+    if shortcut is not None:
+        return [{"event": "final_response", "response": shortcut}]
+
+    # "add a meeting ..." - create it and open the calendar on the new
+    # event's month (or reply asking to restate the date/time)
+    calendar_result = create_event_from_command(user_input)
+    if calendar_result is not None:
+        return [{"event": "final_response", **calendar_result}]
+
+    # "play ..." - hand the web UI a concrete file to play, or candidates to
+    # choose between
+    audio_result = audio_play_result(user_input)
+    if audio_result is not None:
+        return [{"event": "final_response", "response": describe_play_result(audio_result), "audio": audio_result}]
+
+    # Asked to see the calendar: open the month-grid calendar
+    # (features/calendar), which fetches its own data from GET /calendar/month.
+    if is_calendar_request(user_input):
+        year, month = calendar_target_month(user_input)
+        return [{"event": "final_response", "response": "", "show_calendar": {"year": year, "month": month}}]
+
+    return None
 
 
 def shortcut_text_response(user_input):
@@ -122,7 +175,17 @@ def page_context(events):
     return context
 
 
-def ndjson_response(events):
+REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+
+# Tools that only look; the stop reply lists the others as "already done"
+READ_ONLY_TOOLS = {"read_files", "search_files", "get_project_structure", "list_notes", "search_history", "verify_app"}
+
+
+def ndjson_response(events, request_id=None, owner=None):
+    """Stream events as NDJSON. With a request_id the request can be stopped (POST /ask_stream/stop)."""
+    if request_id:
+        events = cancel.scoped(events, cancel.begin(request_id, owner))
+
     # A plain (sync) generator: Starlette iterates it in a worker thread, so
     # slow LLM calls don't block the event loop.
     def body():
@@ -163,37 +226,6 @@ async def ask(request: Request):
                 "error": "You need to provide 'input' to ask the agent"
             })
 
-        shortcut = shortcut_text_response(user_input)
-        if shortcut is not None:
-            return templates.TemplateResponse(name="index.html", request=request, context={
-                "response": shortcut,
-            })
-
-        # Shortcut: "add a meeting ..." - create it and open the calendar on
-        # the new event's month (or reply asking to restate the date/time)
-        calendar_result = create_event_from_command(user_input)
-        if calendar_result is not None:
-            return render_index(request, **page_context([{"event": "final_response", **calendar_result}]))
-
-        # Shortcut: "play ..." requests, bypass the LLM and hand the web UI a
-        # concrete file to play, or candidates to choose between
-        audio_result = audio_play_result(user_input)
-        if audio_result is not None:
-            return templates.TemplateResponse(name="index.html", request=request, context={
-                "response": describe_play_result(audio_result),
-                "audio_data": audio_result,
-            })
-
-        # Shortcut: if the user asked to see their calendar, bypass the LLM
-        # and open the month-grid calendar (features/calendar), which fetches
-        # its own data from GET /calendar/month.
-        if is_calendar_request(user_input):
-            year, month = calendar_target_month(user_input)
-            return templates.TemplateResponse(name="index.html", request=request, context={
-                "response": "",
-                "calendar_month": {"year": year, "month": month},
-            })
-
         events = agent_events(request, user_input)
         return render_index(request, **await run_in_threadpool(page_context, events))
 
@@ -208,10 +240,14 @@ async def ask(request: Request):
 async def ask_stream(request: Request):
     form = await request.form()
 
+    request_id = str(form.get("request_id") or "")
+    request_id = request_id if REQUEST_ID_RE.match(request_id) else None
+    owner = session_owner(request)
+
     # Answer to a permission card: continue the parked run
     run_id = form.get("run_id")
     if run_id:
-        return ndjson_response(resume_events(request, run_id, form.get("permission_decision") == "y"))
+        return ndjson_response(resume_events(request, run_id, form.get("permission_decision") == "y"), request_id, owner)
 
     user_input = form.get("input")
 
@@ -220,35 +256,24 @@ async def ask_stream(request: Request):
             yield serialize_stream_event({"event": "error", "message": "You need to provide 'input' to ask the agent"}) + "\n"
         return StreamingResponse(error_gen(), media_type="application/x-ndjson")
 
-    shortcut = shortcut_text_response(user_input)
-    if shortcut is not None:
-        async def shortcut_gen():
-            yield serialize_stream_event({"event": "final_response", "response": shortcut}) + "\n"
-        return StreamingResponse(shortcut_gen(), media_type="application/x-ndjson")
+    return ndjson_response(agent_events(request, user_input), request_id, owner)
 
-    calendar_result = create_event_from_command(user_input)
-    if calendar_result is not None:
-        return ndjson_response([{"event": "final_response", **calendar_result}])
 
-    audio_result = audio_play_result(user_input)
-    if audio_result is not None:
-        async def audio_gen():
-            yield serialize_stream_event({
-                "event": "final_response",
-                "response": describe_play_result(audio_result),
-                "audio": audio_result,
-            }) + "\n"
-        return StreamingResponse(audio_gen(), media_type="application/x-ndjson")
+@agent_router.post("/ask_stream/stop")
+async def stop_stream(request: Request):
+    """Stop a running streamed request and discard everything it left behind (core/cancel.py)."""
+    form = await request.form()
+    active = cancel.stop(str(form.get("request_id") or ""), owner=session_owner(request))
+    if active is None:
+        return {"stopped": False}
 
-    if is_calendar_request(user_input):
-        year, month = calendar_target_month(user_input)
+    await run_in_threadpool(active.done.wait, cancel.STOP_WAIT_SECONDS)
+    done = [name for name, _ in active.actions if name and name not in READ_ONLY_TOOLS]
+    return {"stopped": True, "finished": active.done.is_set(), "already_done": done}
 
-        async def calendar_gen():
-            yield serialize_stream_event({
-                "event": "final_response",
-                "response": "",
-                "show_calendar": {"year": year, "month": month},
-            }) + "\n"
-        return StreamingResponse(calendar_gen(), media_type="application/x-ndjson")
 
-    return ndjson_response(agent_events(request, user_input))
+@agent_router.post("/conversation/new")
+async def new_conversation(request: Request):
+    """Start a fresh conversation: later questions no longer see the earlier ones (search_history still can)."""
+    session_conversation(request, new=True)
+    return {"ok": True}

@@ -1,3 +1,4 @@
+import os
 # rules, flags, constants
 
 # Per-action override on top of the tool's risk level: "auto" skips the
@@ -17,3 +18,11 @@ RULES = {
 }
 
 MAX_RESULTS = 5
+
+
+def env_int(name, default):
+    """An integer from the environment; an empty or non-numeric value falls back to the default instead of crashing at import."""
+    try:
+        return int(os.getenv(name, default))
+    except ValueError:
+        return default

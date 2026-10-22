@@ -4,12 +4,69 @@
   box-sizing: border-box;
 }
 
+/* Breakpoints (mobile-first, min-width):
+     xs  <  576px   phones          - full width, tight gutters
+     s   >= 576px   large phones    - full width
+     m   >= 768px   tablets         - 720px column
+     l   >= 992px   laptops         - 860px column
+     lg  >= 1200px  desktops        - 960px column
+   --content-max is the width of the feed column and the input bar. */
+:root {
+  --content-max: 100%;
+  --gutter: 12px;
+  --feed-gap: 14px;
+  --logo-size: 22px;
+  --input-font: 16px; /* 16px+ stops iOS zooming in on focus */
+  --icon-font: 20px;
+  --icon-pad: 6px;
+  --card-pad: 14px;
+}
+
+@media (min-width: 576px) {
+  :root {
+    --gutter: 16px;
+    --logo-size: 26px;
+    --icon-pad: 8px;
+    --card-pad: 18px;
+  }
+}
+
+@media (min-width: 768px) {
+  :root {
+    --content-max: 720px;
+    --gutter: 24px;
+    --feed-gap: 18px;
+    --logo-size: 30px;
+    --input-font: 18px;
+    --icon-font: 22px;
+    --icon-pad: 10px;
+    --card-pad: 20px;
+  }
+}
+
+@media (min-width: 992px) {
+  :root {
+    --content-max: 860px;
+    --logo-size: 32px;
+  }
+}
+
+@media (min-width: 1200px) {
+  :root {
+    --content-max: 960px;
+  }
+}
+
+html,
 body {
-  overflow-x: hidden;
+  height: 100%;
+}
+
+body {
+  overflow: hidden; /* the feed scrolls, not the page */
   background: black;
   font-family: Arial, sans-serif;
   color: white;
-  height: 100vh;
 }
 
 #starfield {
@@ -21,25 +78,100 @@ body {
   z-index: -1;
 }
 
+/* --- Chat layout (index.html): header / scrolling feed / docked input ---- */
+
+.app-shell {
+  height: 100vh;
+  height: 100dvh; /* excludes mobile browser chrome */
+  /* The dock is pinned over the bottom of the screen (see .chat-dock), so
+     the shell stops above it - chat.js keeps --dock-h equal to its height.
+     Cards then never scroll underneath the translucent input bar. */
+  padding-bottom: var(--dock-h, 96px);
+
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  flex-shrink: 0;
+  padding: calc(10px + env(safe-area-inset-top)) var(--gutter) 6px;
+}
+
+.app-header .logo {
+  position: static;
+}
+
+.chat-feed {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px var(--gutter);
+
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+  /* Reserve the scrollbar's width on both sides so the cards stay centred
+     on the same axis as the input bar, scrollbar or not. */
+  scrollbar-gutter: stable both-edges;
+}
+
+/* min-height + flex-end: with little content the cards sit just above the
+   input (chat-style); with more, the feed scrolls normally. */
+.chat-feed-inner {
+  width: 100%;
+  max-width: var(--content-max);
+  min-height: 100%;
+  margin: 0 auto;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: var(--feed-gap);
+}
+
+/* Pinned to the bottom centre of the viewport, out of the layout flow, so
+   no card above it can ever move it. */
+.chat-dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+
+  padding: 8px var(--gutter) calc(12px + env(safe-area-inset-bottom));
+}
+
+.chat-dock .chat-form {
+  max-width: var(--content-max);
+  margin: 0 auto;
+}
+
+/* --- Centered single-form pages (login.html / logout.html) -------------- */
+
 .main-container {
   width: 100%;
   height: 100vh;
+  height: 100dvh;
 
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
 
-  padding: 20px;
+  padding: var(--gutter);
+}
+
+.main-container .error-card {
+  margin-top: 20px;
 }
 
 .logo {
   position: fixed;
   top: 20px;
-  left: 24px;
+  left: var(--gutter);
   z-index: 1;
 
-  font-size: 32px;
+  font-size: var(--logo-size);
   font-weight: bold;
 
   background: linear-gradient(90deg, #fff, #999);
@@ -48,9 +180,11 @@ body {
   -webkit-text-fill-color: transparent;
 }
 
+/* --- Input bar ----------------------------------------------------------- */
+
 .chat-form {
   width: 100%;
-  max-width: 850px;
+  max-width: var(--content-max);
 
   display: flex;
   align-items: center;
@@ -63,11 +197,17 @@ body {
 
   border-radius: 30px;
 
-  padding: 10px 15px;
+  padding: 6px 8px;
 
   box-shadow:
     0 0 40px rgba(255, 255, 255, 0.05),
     0 0 100px rgba(255, 255, 255, 0.03);
+}
+
+@media (min-width: 768px) {
+  .chat-form {
+    padding: 10px 15px;
+  }
 }
 
 .chat-form input {
@@ -79,11 +219,11 @@ body {
 
   color: white;
 
-  font-size: 18px;
+  font-size: var(--input-font);
 
   outline: none;
 
-  padding: 12px;
+  padding: 10px 6px;
 }
 
 .chat-form input::placeholder {
@@ -99,9 +239,9 @@ body {
 
   cursor: pointer;
 
-  font-size: 22px;
+  font-size: var(--icon-font);
 
-  padding: 10px;
+  padding: var(--icon-pad);
 
   transition: 0.2s;
 }
@@ -111,56 +251,87 @@ body {
   transform: scale(1.15);
 }
 
+/* While a request is running the arrow becomes a stop block */
+.send-btn.stop {
+  color: #ff6b6b;
+}
+
+/* --- Cards --------------------------------------------------------------- */
+
 .response-card,
 .error-card {
-  width: auto;
-  max-width: 850px;
-
-  margin-top: 30px;
+  width: 100%;
 
   background: rgba(255, 255, 255, 0.05);
 
   border-radius: 20px;
 
-  padding: 20px;
+  padding: var(--card-pad);
 
   backdrop-filter: blur(10px);
 
   border: 1px solid rgba(255, 255, 255, 0.08);
 
-  /* .main-container centers its children in a fixed-height column; a card
-     taller than the viewport would otherwise push earlier content (the
-     input, nav buttons) above scroll range entirely. Scrolling inside the
-     card instead keeps everything else reachable. */
-  max-height: 70vh;
-  overflow-y: auto;
-}
-
-/* A long response/table/error can otherwise grow taller than the viewport;
-   .main-container centers its children with a fixed height, so an
-   overflowing card pushes the chat bar and its buttons above scroll range
-   entirely (see #tts-dashboard, unaffected here since it has its own
-   bounded layout). Scrolling inside the card instead keeps the rest of the
-   page - and its buttons - reachable. */
-.response-card:not(.tts-dashboard),
-.error-card {
-  max-height: 60vh;
-  overflow-y: auto;
+  /* No max-height / overflow here on purpose: a card grows with its text so
+     every line and button stays reachable - the feed is the only thing that
+     scrolls. (Any overflow value would also make the card its own scroll
+     box.) Long lines wrap via the pre rule below instead. */
+  min-width: 0;
 }
 
 .response-card pre,
 .error-card pre {
   white-space: pre-wrap;
-  word-wrap: break-word;
+  overflow-wrap: anywhere;
   color: white;
 }
 
+/* Thinking image with the model's live output beside it. The text box is
+   absolutely filled into its column, so it adds no height of its own: the
+   row is exactly as tall as the image, and the text scrolls inside it. */
+.thinking-row {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  margin: 10px 0;
+}
+
 .thinking-img {
-  display: relative;
-  max-width: 40vw;
+  display: block;
+  flex-shrink: 0;
+  width: clamp(150px, 32vw, 300px);
   height: auto;
-  width: 100%;
-  margin: 10px auto;
+  align-self: flex-start;
+}
+
+.thinking-stream {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+.response-card pre.thinking-stream-text {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  padding: 8px 10px;
+
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.85);
+
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+}
+
+/* The model's reasoning, dimmer than the reply text it streams afterwards. */
+.thinking-stream-text .llm-thinking {
+  color: rgba(255, 255, 255, 0.5);
+  font-style: italic;
 }
 
 /* !important so this always wins regardless of where a later, equally-
@@ -173,4 +344,10 @@ body {
 
 .error-card {
   border: 1px solid rgba(255, 0, 0, 0.3);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .chat-feed {
+    scroll-behavior: smooth;
+  }
 }

@@ -2,10 +2,19 @@ import importlib
 import inspect
 import json
 import re
+import time
 from datetime import datetime
 
-from core.llm import LLMError, chat, OLLAMA_CODE_MODEL
+# Load environment variables
+from dotenv import load_dotenv
+load_dotenv()
+
+from core.llm import LLMError, chat_stream, OLLAMA_CODE_MODEL
+import core.context as context
+import core.conversations as conversations
+from core.context import cap_each, cap_result, prune_messages
 from core.speech_to_text import listen
+from config.settings import env_int
 from config.system_prompt import SYSTEM_PROMPT
 from core.logger import log_event
 from core.permission import ask_cli, needs_approval
@@ -30,7 +39,9 @@ You are a helpful assistant. Try to answer the user's question directly, from yo
 
 If you can answer directly, reply {"action": "none", "response": "your answer"}.
 
-If you cannot answer without a tool (web search, reading/writing project files, calendar, notes, saved audio, etc.), reply {"action": "needs_tools"}.
+If you cannot answer without a tool (web search, reading/writing project files, calendar, notes, saved audio, looking up earlier conversations, etc.), reply {"action": "needs_tools"}.
+
+Earlier messages in this conversation are shown before the question. If the question follows up on earlier work that used tools (for example another change to files edited before), reply {"action": "needs_tools"}.
 """
 
 # Structured output for the local-first check, so the reply is always this JSON
@@ -43,16 +54,33 @@ LOCAL_ANSWER_FORMAT = {
     "required": ["action"],
 }
 
-MAX_STEPS = 8
+# Load MAX_STEPS from environment variable, default to 8 if not set
+MAX_STEPS = env_int('MAX_STEPS', 8)
 
 # Requests that talk about project files can never be answered from memory.
 # Asked directly, the local model replies with manual "open the file and copy
 # the block" instructions instead of reporting that it needs the tools, so
-# these skip the local-first step entirely.
+# these skip the local-first step entirely. Kept narrow on purpose: a bare
+# noun ("what is a project manager?") must still reach the light model, so a
+# noun only counts after a determiner ("the template") or an action verb
+# ("list files").
 FILE_TASK_RE = re.compile(
     r"\.(py|html|css|js|json|md|txt|ics|fish|bat|toml|ya?ml)\b"
-    r"|\b(file|files|project|codebase|repo|repository|template|templates|folder|directory)\b",
+    r"|\b(this|the|my|our|your|that|which|any|all)\s+"
+    r"(project(?!\s+(manager|management|plan|team|lead|charter))|codebase|repo|repository|files?|templates?|folders?|directory)\b"
+    r"|\b(list|show|read|open|edit|find|search|delete|rename|move|create|write|fix|update)\s+(\w+\s+)?"
+    r"(files?|folders?|directory|directories|templates?|codebase|repo|repository)\b",
     re.I,
+)
+
+# Questions about the code itself that name no file: a constant or function
+# ("MAX_STEPS", "run_agent", "needs_tools()") or "where is X defined/used".
+# Case-sensitive on purpose - the identifier shapes are what is being matched.
+CODE_QUESTION_RE = re.compile(
+    r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b"
+    r"|\b[a-z][a-z0-9]*_[a-z0-9_]+\b"
+    r"|\b\w+\(\)"
+    r"|\b[Ww]here\s+(?:is|are|does|do)\b.*\b(defined|declared|implemented|configured|loaded)\b"
 )
 
 # External tools the user approved in this CLI process (the web keeps its own
@@ -61,7 +89,7 @@ _cli_granted = set()
 
 
 def needs_tools(user_input):
-    return bool(user_input and FILE_TASK_RE.search(user_input))
+    return bool(user_input and (FILE_TASK_RE.search(user_input) or CODE_QUESTION_RE.search(user_input)))
 
 
 def parse_decision(raw):
@@ -155,14 +183,58 @@ def system_message():
     return {"role": "system", "content": f"{SYSTEM_PROMPT}\nCurrent date and time: {datetime.now():%A %Y-%m-%d %H:%M}\n"}
 
 
-def try_local_answer(user_input):
+_RESPONSE_FIELD_RE = re.compile(r'"response"\s*:\s*"((?:[^"\\]|\\.)*)')
+
+
+def _response_so_far(raw):
+    """The text of the "response" field in a (possibly unfinished) JSON reply, with escapes decoded."""
+    match = _RESPONSE_FIELD_RE.search(raw)
+    if not match:
+        return ""
+    text = match.group(1)
+    if (len(text) - len(text.rstrip("\\"))) % 2:  # a half-received escape at the end
+        text = text[:-1]
+    try:
+        return json.loads(f'"{text}"')
+    except ValueError:
+        return text
+
+
+def _stream_local_answer(messages):
+    """chat_stream for the structured local-first reply, showing only the answer as it is written.
+
+    The raw stream is JSON ({"action": ..., "response": ...}); passing that on
+    put the protocol into the web UI's live text. Thinking passes through, the
+    content becomes just the growing "response" text, and nothing at all is
+    shown when the model asks for tools. Returns the full assistant message.
+    """
+    stream = chat_stream(messages, format=LOCAL_ANSWER_FORMAT)
+    raw, shown = "", ""
+    try:
+        while True:
+            event = next(stream)
+            if event.get("event") != "llm_delta" or event.get("kind") != "content":
+                yield event
+                continue
+            raw += event.get("text", "")
+            answer = _response_so_far(raw)
+            if len(answer) > len(shown) and answer.startswith(shown):
+                yield {**event, "text": answer[len(shown):]}
+                shown = answer
+    except StopIteration as done:
+        return done.value
+
+
+def try_local_answer(user_input, history=()):
     """Ask the local model to answer directly, without any tools.
 
-    Returns the answer text, or None if the model needs a tool to proceed.
+    history is the conversation's earlier turns (core.conversations.history_messages).
+    A generator (llm_delta events while the model writes) - use
+    `answer = yield from try_local_answer(...)`. Returns the answer text, or
+    None if the model needs a tool to proceed.
     """
-    message = chat(
-        [{"role": "system", "content": LOCAL_ONLY_PROMPT}, {"role": "user", "content": user_input}],
-        format=LOCAL_ANSWER_FORMAT,
+    message = yield from _stream_local_answer(
+        [{"role": "system", "content": LOCAL_ONLY_PROMPT}, *history, {"role": "user", "content": user_input}]
     )
     raw = message.get("content") or ""
     log_event({"type": "llm_raw_decision", "raw": raw, "mode": "local_first"})
@@ -256,7 +328,7 @@ def _signature(name, args):
 
 
 def _tool_result(run, name, text):
-    run.messages.append({"role": "tool", "tool_name": str(name), "content": text})
+    run.messages.append({"role": "tool", "tool_name": str(name), "content": cap_result(text, tool=name)})
 
 
 def _result_text(result):
@@ -266,6 +338,37 @@ def _result_text(result):
         return json.dumps(result, default=str)
     except Exception:
         return str(result)
+
+
+# Arguments that say what a call was about, for the conversation history -
+# never file contents or replacement text.
+_SUMMARY_ARGS = ("path", "paths", "dest", "keyword", "query", "title", "start", "country", "urls", "number")
+
+
+# Tools report most failures as plain text rather than raising, so a call that
+# "worked" may only have returned one of these. The turn history must not claim
+# an edit that never happened.
+_FAILURE_PREFIXES = (
+    "ERROR", "Access denied", "File not found", "No path provided", "No content provided",
+    "No old_text provided", "No search term provided", "No files matched", "No lines ",
+    "No inline", "old_text ", "Rate limit", "urls must", "Unknown", "Could not",
+)
+
+
+def _reported_failure(result):
+    return isinstance(result, str) and result.lstrip().startswith(_FAILURE_PREFIXES)
+
+
+def _action_summary(name, args):
+    parts = []
+    for key in _SUMMARY_ARGS:
+        value = args.get(key) if isinstance(args, dict) else None
+        if value in (None, "", []):
+            continue
+        if isinstance(value, list):
+            value = ", ".join(map(str, value))
+        parts.append(str(value) if key in ("path", "paths") else f"{key}={value}")
+    return " ".join([name, *parts])[:200]
 
 
 def _assistant_message(content, calls):
@@ -292,6 +395,7 @@ def _run_call(run, call, approved):
         return False
 
     yield {"event": "status", "message": f"Executing tool: {name}"}
+    started = time.perf_counter()
     try:
         result = execute_tool(name, args)
     except Exception as e:
@@ -304,6 +408,9 @@ def _run_call(run, call, approved):
         yield {"event": "status", "message": f"Tool {name} failed ({type(e).__name__}), letting the model correct it..."}
         return False
 
+    summary = _action_summary(name, args)
+    run.actions.append(f"{summary} (failed)" if _reported_failure(result) else summary)
+
     # A change can make an earlier identical call (verify_app, read_files)
     # worth running again, so the repeat guard starts over.
     if tool.get("risk") == "high":
@@ -313,16 +420,19 @@ def _run_call(run, call, approved):
     if name == "create_calendar_event" and args.get("start"):
         run.show_calendar = calendar_view_for(args["start"])
 
-    result_text = _result_text(result)
+    tool_seconds = time.perf_counter() - started
+    # Several files in one read: cap each separately so none loses all of its content
+    result_text = _result_text(cap_each(result, tool=name))
     log_event({
         "type": "tool_execution",
+        "seconds": round(tool_seconds, 2),
         "step": run.step,
         "action": name,
         "args": args,
         "result": result_text[:500]
     })
 
-    yield {"event": "status", "message": f"Tool {name} completed."}
+    yield {"event": "status", "message": f"Tool {name} completed in {tool_seconds:.1f}s."}
 
     # A calendar event list is shown as the month-grid calendar, not fed
     # back to the LLM for a text summary.
@@ -410,14 +520,23 @@ def _loop(run, interactive, approved=None):
 
         run.step += 1
         yield {"event": "status", "message": f"Step {run.step}: asking the LLM for next action..."}
+        history = prune_messages(run.messages)
+        if history is not run.messages:
+            # Stubbed results tell the model to call the tool again for the
+            # exact text - the repeat guard must not refuse that.
+            run.attempted.clear()
+        started = time.perf_counter()
         try:
-            message = chat(run.messages, model=OLLAMA_CODE_MODEL, tools=tool_schemas())
+            message = yield from chat_stream(history, model=OLLAMA_CODE_MODEL, tools=tool_schemas())
         except LLMError as e:
             yield {"event": "error", "message": str(e)}
             return
 
+        llm_seconds = time.perf_counter() - started
+        tokens_in = context.estimate_tokens(history)
         log_event({"type": "llm_raw_decision", "raw": message.get("content"), "tool_calls": message.get("tool_calls")})
-        yield {"event": "status", "message": "LLM decision complete."}
+        log_event({"type": "step_timing", "step": run.step, "llm_seconds": round(llm_seconds, 2), "est_tokens_in": tokens_in})
+        yield {"event": "status", "message": f"LLM decision complete in {llm_seconds:.1f}s (~{tokens_in:,} tokens in)."}
 
         calls = _calls_from_message(message)
         if not calls:
@@ -468,7 +587,7 @@ def _run_steps(run, interactive):
         yield {"event": "status", "message": "Trying local model..."}
 
         try:
-            local_answer = try_local_answer(user_input)
+            local_answer = yield from try_local_answer(user_input, run.history)
         except LLMError as e:
             yield {"event": "error", "message": str(e)}
             return
@@ -479,7 +598,7 @@ def _run_steps(run, interactive):
 
         yield {"event": "status", "message": "Local model needs tools, continuing..."}
 
-    run.messages = [system_message(), {"role": "user", "content": user_input}]
+    run.messages = [system_message(), *run.history, {"role": "user", "content": user_input}]
 
     planned = planned_first_decision(user_input)
     if planned is not None:
@@ -499,9 +618,9 @@ def run_agent(user_input):
     print(f"Input: {user_input}")
 
     final_response = "Max steps reached without conclusion."
-    run = AgentRun(user_input, granted=_cli_granted)
+    run = _new_run(user_input, cli_conversation_id(), granted=_cli_granted)
 
-    for event in _run_steps(run, interactive=True):
+    for event in _recorded(run, _run_steps(run, interactive=True)):
         etype = event.get("event")
 
         if etype == "status":
@@ -516,21 +635,43 @@ def run_agent(user_input):
     return final_response
 
 
-def stream_agent(user_input, owner=None, granted=()):
-    """Web entry point. Yields status/final_response/error/permission_required events.
+def stream_agent(user_input, owner=None, granted=(), conversation_id=None):
+    """Web entry point. Yields status/llm_delta/final_response/error/permission_required events.
 
     owner is the login session id (only it can resume a parked run); granted
-    is the external tools that session already approved.
+    is the external tools that session already approved; conversation_id is
+    the session's conversation (core/conversations.py) - its earlier turns
+    are sent with the question, and this one is stored when it finishes.
     """
     log_event({"type": "user_input", "input": user_input, "stream": True})
-    run = AgentRun(user_input, owner=owner, granted=set(granted))
-    yield from _run_steps(run, interactive=False)
+    run = _new_run(user_input, conversation_id, owner=owner, granted=set(granted))
+    yield from _recorded(run, _run_steps(run, interactive=False))
 
 
 def resume_agent(run, approved):
     """Continue a parked run (core.runs.take) with the user's answer for its pending call."""
     log_event({"type": "permission_decision", "action": run.pending and run.pending["name"], "approved": approved})
-    yield from _loop(run, interactive=False, approved=approved)
+    yield from _recorded(run, _loop(run, interactive=False, approved=approved))
+
+
+def _new_run(user_input, conversation_id, **kwargs):
+    history = conversations.history_messages(conversation_id)
+    return AgentRun(user_input, conversation_id=conversation_id, history=history, **kwargs)
+
+
+def _recorded(run, events):
+    return conversations.record(events, run.conversation_id, run.user_input, run.actions)
+
+
+# The CLI's conversation: one per process, until "/new"
+_cli_conversation = None
+
+
+def cli_conversation_id(new=False):
+    global _cli_conversation
+    if new or _cli_conversation is None:
+        _cli_conversation = conversations.new_conversation()
+    return _cli_conversation
 
 
 if __name__ == "__main__":
@@ -554,6 +695,11 @@ if __name__ == "__main__":
 
         if user_input.lower() in ["switch to text"]:
             mode = "t"
+            continue
+
+        if user_input.strip().lower() in ["/new", "new chat", "new conversation"]:
+            cli_conversation_id(new=True)
+            print("Started a new conversation.")
             continue
 
         if user_input.lower() in ["exit", "quit"]:

@@ -68,6 +68,19 @@ python -m agent                   # CLI
 python -m pytest                  # tests
 ```
 
+### Remote access over Tailscale
+
+`desktop/start_agent_ui.fish` keeps uvicorn on `127.0.0.1:8000` and, if `tailscale` is installed, runs `tailscale serve --bg 8000` to publish it on your tailnet at `https://<machine>.<tailnet>.ts.net` (HTTPS is required for the mic button on other devices). One-time setup on CachyOS/Arch:
+
+```
+sudo pacman -S tailscale
+sudo systemctl enable --now tailscaled
+sudo tailscale up                       # log in via the printed URL
+sudo tailscale set --operator=$USER     # lets the launcher run `tailscale serve` without sudo
+```
+
+Then turn on MagicDNS and HTTPS certificates under DNS in the Tailscale admin console. `tailscale serve` will give you a link to do this if they're off. Only devices on your tailnet can reach the URL, and the app's own login still applies. `tailscale serve reset` stops publishing it.
+
 ### Windows shortcut (`.bat`)
 
 ```
@@ -85,8 +98,13 @@ pause
 | `OLLAMA_MODEL` | `qwen3:8b` | Light model for direct answers |
 | `OLLAMA_CODE_MODEL` | `qwen3-coder:30b` | Model for the tool loop (must support Ollama tool calling) |
 | `OLLAMA_CHAT_URL` | `http://localhost:11434/api/chat` | Local chat endpoint the agent uses |
-| `OLLAMA_NUM_CTX` | `16384` | Context window (Ollama's 4096 default silently truncates source files) |
+| `OLLAMA_NUM_CTX` | `8192` | Context window for the light model (Ollama's 4096 default silently truncates) |
+| `OLLAMA_CODE_NUM_CTX` | `32768` | Context window for the tool-loop model (it accumulates file reads) |
 | `OLLAMA_TIMEOUT` | `600` | Request timeout (seconds) |
+| `READ_WHOLE_FILE_MAX_LINES` | `400` | Files longer than this are read as an outline; the model asks for a section with `start_line`/`end_line` |
+| `MAX_STEPS` | `8` | Tool-loop step limit per request |
+
+Measured on the dev machine (58 GB RAM, `qwen3-coder:30b` fully on GPU): `num_ctx` 8192 uses 19 GB, 32768 uses 21 GB, with about the same load time (~9 s) and generation speed (~85-89 tok/s). The larger window costs little; it's the prompt length that determines processing time.
 
 To run everything on the light model: `set -x OLLAMA_CODE_MODEL qwen3:8b` (fish). To switch models, `ollama pull <model>` and set the variable above.
 

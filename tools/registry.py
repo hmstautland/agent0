@@ -20,17 +20,19 @@ TOOLS = {
     },
     "search_files": {
         "func": "tools.files.search_files",
-        "description": "Search project files by keyword",
+        "description": "Search project files by keyword. Returns matching files with the line number and text of the first matches, so you can read just that section with read_files start_line/end_line",
         "risk": "medium",
         "parameters": _params({"keyword": {"type": "string", "description": "Word or phrase to search for"}}, ["keyword"]),
     },
     "read_files": {
         "func": "tools.files.read_files",
-        "description": "Read file contents from the project",
+        "description": "Read file contents from the project. For a large file, read only the section you need with start_line/end_line",
         "risk": "medium",
         "parameters": _params({
             "path": {"type": "string", "description": "Project-relative file path"},
             "paths": {"type": "array", "items": _STRING, "description": "Several project-relative paths"},
+            "start_line": {"type": "integer", "description": "First line to read (1-based, inclusive)"},
+            "end_line": {"type": "integer", "description": "Last line to read (inclusive)"},
         }),
     },
     "write_file": {
@@ -129,6 +131,16 @@ TOOLS = {
         "parameters": _params({
             "query": {"type": "string", "description": "Only notes containing this text"},
             "limit": {"type": "integer", "description": "Maximum number of notes (default 10)"},
+        }),
+    },
+    "search_history": {
+        "func": "core.conversations.search_history",
+        "description": "Look up earlier conversations with the user, including previous sessions: what they asked, what you answered and which tools you used. Use it when the user refers to something from before that is not in this conversation (\"what did we change yesterday?\")",
+        "risk": "low",
+        "parameters": _params({
+            "query": {"type": "string", "description": "Text to look for in the questions, answers or tools used; leave out for the most recent turns"},
+            "days": {"type": "integer", "description": "Only the last N days"},
+            "limit": {"type": "integer", "description": "Maximum number of turns (default 10)"},
         }),
     },
 }

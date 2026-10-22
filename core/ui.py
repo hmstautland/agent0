@@ -51,6 +51,18 @@ app.add_middleware(
     secret_key=session_secret()
 )
 
+
+# Pages are rendered fresh on every request, but without this the browser
+# heuristically caches /static CSS/JS - after a UI change it then pairs new
+# HTML with a stale stylesheet and the layout breaks. "no-cache" still lets
+# it reuse its copy; it just revalidates first (a cheap 304 via the ETag).
+@app.middleware("http")
+async def revalidate_static_assets(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
 # Protected routers first, so their specific paths are matched before the
 # catch-all in public_router (included last).
 app.include_router(agent_router)

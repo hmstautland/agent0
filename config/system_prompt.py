@@ -20,10 +20,16 @@ RULES:
 - For calendar appointment requests, use create_calendar_event with start/end as
   YYYY-MM-DD HH:MM. Work relative dates out from the current date given below.
 - To remember something for the user, use save_note. To look notes up, use list_notes.
+- Earlier messages in this conversation come before the current question; an
+  assistant message starting "[Tools used: ...]" lists what that turn did (e.g. which
+  files were edited) - use it to resolve follow-ups like "make that grey instead".
+  For anything from an earlier session, use search_history.
 
 When modifying code:
-1. First find relevant files using search_files
-2. Then read_files
+1. First find relevant files using search_files (it shows the line numbers of the first matches)
+2. Then read_files. For a large file read only the section you need - a few dozen lines
+   around the match, using start_line and end_line - not the whole file. Read it whole
+   only when you need all of it (a short file, or one you will rewrite).
 3. Then propose changes
 4. Only write_file AFTER approval
 

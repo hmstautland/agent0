@@ -1,5 +1,9 @@
+import json
 import os
+
 import requests
+
+from core import cancel
 
 # Older setting (the /api/generate endpoint) - still honoured, so an existing
 # OLLAMA_URL pointing at another host keeps working for the chat URL below.
@@ -20,17 +24,36 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:8b")
 # 4B model cannot drive a multi-step edit reliably.
 OLLAMA_CODE_MODEL = os.getenv("OLLAMA_CODE_MODEL", "qwen3-coder:30b")
 
-# Ollama defaults to a 4096 token context. Reading a single template can exceed
-# that, and the overflow is silently truncated - the model then loses the
-# instructions and replies with prose or invented tool names.
-OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "16384"))
+# Ollama defaults to a 4096 token context, and overflow is silently truncated -
+# the model then loses the instructions and replies with prose or invented tool
+# names. The light model only sees short prompts, so it gets a small window; the
+# tool loop accumulates file reads, so the code model gets a much larger one.
+OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
+OLLAMA_CODE_NUM_CTX = int(os.getenv("OLLAMA_CODE_NUM_CTX", "32768"))
 
-# Reading a large file into the prompt takes a while on CPU-only inference
+# Reading a large file into the prompt can take a while, especially without a GPU
 OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "600"))
 
 
 class LLMError(RuntimeError):
     """Ollama could not be reached, or did not return a usable answer."""
+
+
+def _payload(messages, model, tools, format, think, stream):
+    model = model or OLLAMA_MODEL
+    payload = {
+        "model": model,
+        "messages": messages,
+        "stream": stream,
+        "options": {"num_ctx": OLLAMA_CODE_NUM_CTX if model == OLLAMA_CODE_MODEL else OLLAMA_NUM_CTX},
+    }
+    if tools:
+        payload["tools"] = tools
+    if format is not None:
+        payload["format"] = format
+    if think is not None:
+        payload["think"] = think
+    return payload
 
 
 def chat(messages, model=None, tools=None, format=None, think=None):
@@ -41,18 +64,7 @@ def chat(messages, model=None, tools=None, format=None, think=None):
     message["tool_calls"]. format is a JSON schema the reply must follow
     (structured outputs). Everything runs on the local Ollama server.
     """
-    payload = {
-        "model": model or OLLAMA_MODEL,
-        "messages": messages,
-        "stream": False,
-        "options": {"num_ctx": OLLAMA_NUM_CTX},
-    }
-    if tools:
-        payload["tools"] = tools
-    if format is not None:
-        payload["format"] = format
-    if think is not None:
-        payload["think"] = think
+    payload = _payload(messages, model, tools, format, think, stream=False)
 
     try:
         response = requests.post(OLLAMA_CHAT_URL, json=payload, timeout=OLLAMA_TIMEOUT)
@@ -69,4 +81,55 @@ def chat(messages, model=None, tools=None, format=None, think=None):
     if not isinstance(message, dict):
         raise LLMError(f"Ollama returned no message: {str(body)[:300]}")
 
+    return message
+
+
+def chat_stream(messages, model=None, tools=None, format=None, think=None):
+    """Like chat(), but streamed: a generator for `message = yield from chat_stream(...)`.
+
+    Yields {"event": "llm_delta", "kind": "thinking" | "content", "text": ...}
+    as Ollama produces text, so the web UI can show the model working. Returns
+    the same assembled assistant message dict chat() would.
+    """
+    payload = _payload(messages, model, tools, format, think, stream=True)
+    content, thinking, tool_calls = [], [], []
+
+    try:
+        with requests.post(OLLAMA_CHAT_URL, json=payload, timeout=OLLAMA_TIMEOUT, stream=True) as response:
+            cancel.attach(response)  # a stop (core/cancel.py) can cut this connection off
+            try:
+                response.raise_for_status()
+                for line in response.iter_lines():
+                    if not line:
+                        continue
+                    chunk = json.loads(line)
+                    if not isinstance(chunk, dict):
+                        raise LLMError(f"Ollama returned an unexpected chunk: {str(chunk)[:300]}")
+                    if chunk.get("error"):
+                        raise LLMError(f"Ollama returned an error: {str(chunk['error'])[:300]}")
+
+                    message = chunk.get("message") or {}
+                    for kind, parts in (("thinking", thinking), ("content", content)):
+                        text = message.get(kind)
+                        if text:
+                            parts.append(text)
+                            yield {"event": "llm_delta", "kind": kind, "text": text}
+                    tool_calls.extend(message.get("tool_calls") or [])
+
+                    if chunk.get("done"):
+                        break
+            finally:
+                cancel.detach(response)
+    except requests.HTTPError as e:
+        raise LLMError(f"Ollama returned an error ({e.response.status_code}): {e.response.text[:300]}") from e
+    except requests.RequestException as e:
+        raise LLMError(f"Could not reach Ollama at {OLLAMA_CHAT_URL}. Is `ollama serve` running? ({e})") from e
+    except ValueError as e:
+        raise LLMError(f"Ollama returned a reply that is not JSON: {e}") from e
+
+    message = {"role": "assistant", "content": "".join(content)}
+    if thinking:
+        message["thinking"] = "".join(thinking)
+    if tool_calls:
+        message["tool_calls"] = tool_calls
     return message

@@ -30,6 +30,13 @@ class AgentRun:
     # External tools the user already approved this session
     granted: set = field(default_factory=set)
     messages: list = field(default_factory=list)
+    # Conversation the run belongs to (core/conversations.py) and its earlier
+    # turns as chat messages, put before the question
+    conversation_id: str | None = None
+    history: list = field(default_factory=list)
+    # One-line summaries of the tool calls that ran ("edit_file static/styles.css"),
+    # stored with the turn so a follow-up knows what was done
+    actions: list = field(default_factory=list)
     # Tool calls from the model's last reply that have not been handled yet
     queue: list = field(default_factory=list)
     # The call waiting for approval while the run is parked

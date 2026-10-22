@@ -6,6 +6,8 @@ __pycache__/
 
 # Virtual environments
 .env
+.env.bak
+*.bak
 .envrc
 .venv
 env/
@@ -58,3 +60,7 @@ models/
 *.bin
 *.mp4
 *.zip
+
+
+# REVIEWS
+.review/
