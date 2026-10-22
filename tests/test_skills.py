@@ -39,3 +39,41 @@ def test_shipped_move_code_skill_keeps_the_destination_first_rule():
 
     assert "Write the destination file FIRST" in body
     assert "extract_inline_scripts" in body
+
+
+def test_shipped_decision_log_skill_inserts_below_the_marker_in_docs():
+    body = skills.load_skill(name="decision-log")
+    log = open("docs/DECISIONS.md", encoding="utf-8").read()
+    marker = "<!-- New decisions go directly below this line, newest first. -->"
+
+    assert marker in body
+    assert log.count(marker) == 1
+
+
+def test_a_malformed_or_duplicate_skill_file_is_skipped_not_fatal(monkeypatch, tmp_path):
+    monkeypatch.setattr(skills, "SKILL_FOLDER", tmp_path)
+    (tmp_path / "a-open.md").write_text("---\nname: broken\ndescription: x\n")  # no closing ---
+    (tmp_path / "b-binary.md").write_bytes(b"---\n\xff\xfe\n---\nbody")
+    (tmp_path / "c-empty.md").write_text("---\nname: empty\ndescription: x\n---\n")
+    _write(tmp_path, "d-good", "ok", "first")
+    (tmp_path / "e-dup.md").write_text("---\nname: d-good\ndescription: dup\n---\nsecond\n")
+
+    assert list(skills._skills()) == ["d-good"]
+    assert skills.load_skill(name="d-good") == "first"
+
+
+def test_skills_are_found_from_any_working_directory(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+
+    assert "weekly-report" in skills._skills()
+
+
+def test_local_first_prompt_lists_the_skills_so_their_requests_reach_the_tool_loop():
+    assert "- weekly-report:" in agent.local_only_prompt()
+
+
+def test_shipped_document_feature_skill_asks_before_writing_docs():
+    body = skills.load_skill(name="document-feature")
+
+    assert "docs/features/README.md" in body
+    assert "Do not write any docs" in body

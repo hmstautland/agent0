@@ -64,3 +64,5 @@ models/
 
 # REVIEWS
 .review/
+# Generated HTML docs (python docs/build_html.py)
+docs/html/
