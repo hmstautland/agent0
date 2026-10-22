@@ -41,6 +41,9 @@ class AgentRun:
     queue: list = field(default_factory=list)
     # The call waiting for approval while the run is parked
     pending: dict | None = None
+    # Ollama model running the tool loop (core.llm: the general or the code
+    # model), kept so a resumed run continues on the same one
+    model: str | None = None
     step: int = 0
     attempted: set = field(default_factory=set)
     unknown_tool_retries: int = 2

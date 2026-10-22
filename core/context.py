@@ -9,12 +9,12 @@ call - and the stub says the result can be fetched again.
 
 import re
 
-from core.llm import OLLAMA_CODE_NUM_CTX
+from core.llm import OLLAMA_CODE_NUM_CTX, OLLAMA_NUM_CTX
 
 # Share of the window the history may use; the rest is for the tool schemas
-# and the model's reply.
+# and the model's reply. Either model can run the loop, so the smaller window counts.
 BUDGET_RATIO = 0.75
-CONTEXT_BUDGET_TOKENS = int(OLLAMA_CODE_NUM_CTX * BUDGET_RATIO)
+CONTEXT_BUDGET_TOKENS = int(min(OLLAMA_NUM_CTX, OLLAMA_CODE_NUM_CTX) * BUDGET_RATIO)
 
 # Newest tool results always kept whole - the model is usually still working
 # from them (an edit needs the exact text of the file it just read).
@@ -30,10 +30,10 @@ _RANGE_HEADER_RE = re.compile(r"\[lines (\d+)-\d+ of \d+\]\n")
 
 
 def estimate_tokens(messages):
-    """Rough token count (about 4 characters per token) over content and tool-call arguments."""
+    """Rough token count (about 4 characters per token) over content, thinking and tool-call arguments."""
     chars = 0
     for message in messages:
-        chars += len(str(message.get("content") or ""))
+        chars += len(str(message.get("content") or "")) + len(str(message.get("thinking") or ""))
         for call in message.get("tool_calls") or []:
             chars += len(str(call))
     return chars // 4

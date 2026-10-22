@@ -9,7 +9,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 load_dotenv()
 
-from core.llm import LLMError, chat_stream, OLLAMA_CODE_MODEL
+from core.llm import LLMError, chat_stream, OLLAMA_CODE_MODEL, OLLAMA_MODEL
 import core.context as context
 import core.conversations as conversations
 from core.context import cap_each, cap_result, prune_messages
@@ -23,6 +23,7 @@ from features.calendar.calendar import calendar_view_for, create_event_from_comm
 from tools.registry import TOOLS
 from features.audio.player import describe_play_result, parse_play_command, play_audio_file
 from tools.files import parse_script_refactor_command
+from tools.skills import skill_lines, skills_index
 
 # 🔁 Agent Flow
 # 1. User input
@@ -39,20 +40,27 @@ You are a helpful assistant. Try to answer the user's question directly, from yo
 
 If you can answer directly, reply {"action": "none", "response": "your answer"}.
 
-If you cannot answer without a tool (web search, reading/writing project files, calendar, notes, saved audio, looking up earlier conversations, etc.), reply {"action": "needs_tools"}.
+If you cannot answer without a tool:
+- reply {"action": "needs_code"} when the task involves code: source files, templates, scripts or config (reading, writing, editing or explaining them);
+- otherwise reply {"action": "needs_tools"} - this includes text files such as Markdown docs and notes, as well as web search, calendar, saved audio, looking up earlier conversations, etc.
 
-Earlier messages in this conversation are shown before the question. If the question follows up on earlier work that used tools (for example another change to files edited before), reply {"action": "needs_tools"}.
+Earlier messages in this conversation are shown before the question. If the question follows up on earlier work that used tools, it needs tools too: {"action": "needs_code"} if that work was on code (for example another change to a script edited before), else {"action": "needs_tools"}.
 """
 
 # Structured output for the local-first check, so the reply is always this JSON
 LOCAL_ANSWER_FORMAT = {
     "type": "object",
     "properties": {
-        "action": {"type": "string", "enum": ["none", "needs_tools"]},
+        "action": {"type": "string", "enum": ["none", "needs_tools", "needs_code"]},
         "response": {"type": "string"},
     },
     "required": ["action"],
 }
+
+# Which model runs the tool loop: the code model when the task involves code,
+# the general model for everything else (text files and docs included - it
+# writes better prose, and editing a file needs no code skill).
+LOOP_MODELS = {"needs_tools": OLLAMA_MODEL, "needs_code": OLLAMA_CODE_MODEL}
 
 # Load MAX_STEPS from environment variable, default to 8 if not set
 MAX_STEPS = env_int('MAX_STEPS', 8)
@@ -60,25 +68,36 @@ MAX_STEPS = env_int('MAX_STEPS', 8)
 # Requests that talk about project files can never be answered from memory.
 # Asked directly, the local model replies with manual "open the file and copy
 # the block" instructions instead of reporting that it needs the tools, so
-# these skip the local-first step entirely. Kept narrow on purpose: a bare
-# noun ("what is a project manager?") must still reach the light model, so a
-# noun only counts after a determiner ("the template") or an action verb
-# ("list files").
-FILE_TASK_RE = re.compile(
-    r"\.(py|html|css|js|json|md|txt|ics|fish|bat|toml|ya?ml)\b"
-    r"|\b(this|the|my|our|your|that|which|any|all)\s+"
-    r"(project(?!\s+(manager|management|plan|team|lead|charter))|codebase|repo|repository|files?|templates?|folders?|directory)\b"
-    r"|\b(list|show|read|open|edit|find|search|delete|rename|move|create|write|fix|update)\s+(\w+\s+)?"
-    r"(files?|folders?|directory|directories|templates?|codebase|repo|repository)\b",
+# these skip the local-first step entirely (see tool_route). Kept narrow on
+# purpose: a bare noun ("what is a project manager?") must still reach the
+# local-first answer, so a noun only counts after a determiner ("the
+# template") or an action verb ("list files").
+_DETERMINER = r"\b(this|the|my|our|your|that|which|any|all)\s+"
+_FILE_VERB = r"\b(list|show|read|open|edit|find|search|delete|rename|move|create|write|fix|update)\s+(\w+\s+)?"
+
+# ...and of those, the ones that are about code go to the code model
+CODE_TASK_RE = re.compile(
+    r"\.(py|html|css|js|json|fish|bat|toml|ya?ml)\b"
+    rf"|{_DETERMINER}(project(?!\s+(manager|management|plan|team|lead|charter))|codebase|repo|repository|templates?)\b"
+    rf"|{_FILE_VERB}(templates?|codebase|repo|repository)\b",
+    re.I,
+)
+
+# ...while text files and plain file handling go to the general model
+TEXT_FILE_TASK_RE = re.compile(
+    r"\.(md|txt|ics)\b"
+    rf"|{_DETERMINER}(files?|folders?|directory)\b"
+    rf"|{_FILE_VERB}(files?|folders?|directory|directories)\b",
     re.I,
 )
 
 # Questions about the code itself that name no file: a constant or function
-# ("MAX_STEPS", "run_agent", "needs_tools()") or "where is X defined/used".
+# ("MAX_STEPS", "run_agent", "tool_route()") or "where is X defined/used".
 # Case-sensitive on purpose - the identifier shapes are what is being matched.
+# A name followed by an extension is a file name ("note_2026.txt"), not code.
 CODE_QUESTION_RE = re.compile(
-    r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b"
-    r"|\b[a-z][a-z0-9]*_[a-z0-9_]+\b"
+    r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b(?!\.\w)"
+    r"|\b[a-z][a-z0-9]*_[a-z0-9_]+\b(?!\.\w)"
     r"|\b\w+\(\)"
     r"|\b[Ww]here\s+(?:is|are|does|do)\b.*\b(defined|declared|implemented|configured|loaded)\b"
 )
@@ -88,8 +107,19 @@ CODE_QUESTION_RE = re.compile(
 _cli_granted = set()
 
 
-def needs_tools(user_input):
-    return bool(user_input and (FILE_TASK_RE.search(user_input) or CODE_QUESTION_RE.search(user_input)))
+def tool_route(user_input):
+    """The model to run the tool loop with, for a request that certainly needs tools - else None.
+
+    Code wins over text, so "update the README to describe run_agent()" goes
+    to the code model.
+    """
+    if not user_input:
+        return None
+    if CODE_TASK_RE.search(user_input) or CODE_QUESTION_RE.search(user_input):
+        return OLLAMA_CODE_MODEL
+    if TEXT_FILE_TASK_RE.search(user_input):
+        return OLLAMA_MODEL
+    return None
 
 
 def parse_decision(raw):
@@ -180,7 +210,7 @@ def tool_schemas():
 
 
 def system_message():
-    return {"role": "system", "content": f"{SYSTEM_PROMPT}\nCurrent date and time: {datetime.now():%A %Y-%m-%d %H:%M}\n"}
+    return {"role": "system", "content": f"{SYSTEM_PROMPT}\n{skills_index()}\nCurrent date and time: {datetime.now():%A %Y-%m-%d %H:%M}\n"}
 
 
 _RESPONSE_FIELD_RE = re.compile(r'"response"\s*:\s*"((?:[^"\\]|\\.)*)')
@@ -225,16 +255,30 @@ def _stream_local_answer(messages):
         return done.value
 
 
+def local_only_prompt():
+    """LOCAL_ONLY_PROMPT, plus the skills: a request one of them covers needs the tool loop, where load_skill lives."""
+    lines = skill_lines()
+    if not lines:
+        return LOCAL_ONLY_PROMPT
+    return (
+        f"{LOCAL_ONLY_PROMPT}\n"
+        "Skills the tool loop can load. A request one of them covers needs tools "
+        '({"action": "needs_code"} when the skill is about code):\n'
+        f"{lines}\n"
+    )
+
+
 def try_local_answer(user_input, history=()):
     """Ask the local model to answer directly, without any tools.
 
     history is the conversation's earlier turns (core.conversations.history_messages).
     A generator (llm_delta events while the model writes) - use
-    `answer = yield from try_local_answer(...)`. Returns the answer text, or
-    None if the model needs a tool to proceed.
+    `answer, action = yield from try_local_answer(...)`. Returns (answer
+    text, "none"), or (None, "needs_tools" / "needs_code") if the model needs
+    a tool to proceed.
     """
     message = yield from _stream_local_answer(
-        [{"role": "system", "content": LOCAL_ONLY_PROMPT}, *history, {"role": "user", "content": user_input}]
+        [{"role": "system", "content": local_only_prompt()}, *history, {"role": "user", "content": user_input}]
     )
     raw = message.get("content") or ""
     log_event({"type": "llm_raw_decision", "raw": raw, "mode": "local_first"})
@@ -244,12 +288,13 @@ def try_local_answer(user_input, history=()):
         # Asked for JSON and didn't give it - in practice the model got
         # confused or refused ("I can't interact with your calendar") rather
         # than gave a real answer, so treat it as needing a tool.
-        return None
+        return None, "needs_tools"
 
-    if decision.get("action") in (None, "none") and decision.get("response"):
-        return decision["response"]
+    action = decision.get("action")
+    if action in (None, "none") and decision.get("response"):
+        return decision["response"], "none"
 
-    return None
+    return None, action if action in LOOP_MODELS else "needs_tools"
 
 
 def _normalize_args(args):
@@ -371,12 +416,17 @@ def _action_summary(name, args):
     return " ".join([name, *parts])[:200]
 
 
-def _assistant_message(content, calls):
-    return {
+def _assistant_message(content, calls, thinking=None):
+    message = {
         "role": "assistant",
         "content": content or "",
         "tool_calls": [{"function": {"name": c["name"], "arguments": c["arguments"]}} for c in calls],
     }
+    # Thinking models plan across tool calls; dropping their reasoning from
+    # the history makes them lose the plan (or stop reasoning) in later steps.
+    if thinking:
+        message["thinking"] = thinking
+    return message
 
 
 def _run_call(run, call, approved):
@@ -527,7 +577,7 @@ def _loop(run, interactive, approved=None):
             run.attempted.clear()
         started = time.perf_counter()
         try:
-            message = yield from chat_stream(history, model=OLLAMA_CODE_MODEL, tools=tool_schemas())
+            message = yield from chat_stream(history, model=run.model, tools=tool_schemas())
         except LLMError as e:
             yield {"event": "error", "message": str(e)}
             return
@@ -550,7 +600,9 @@ def _loop(run, interactive, approved=None):
         # Keep the model's own text only when the calls came through the API;
         # a call written into the text would otherwise appear twice.
         native = bool(message.get("tool_calls"))
-        run.messages.append(_assistant_message(message.get("content") if native else calls[0]["reason"], calls))
+        run.messages.append(
+            _assistant_message(message.get("content") if native else calls[0]["reason"], calls, message.get("thinking"))
+        )
         run.queue = calls
 
 
@@ -581,13 +633,14 @@ def _run_steps(run, interactive):
         yield {"event": "final_response", "response": describe_play_result(result), "audio": result}
         return
 
-    if needs_tools(user_input):
-        yield {"event": "status", "message": "This needs the project tools, skipping the local model..."}
+    run.model = tool_route(user_input)
+    if run.model is not None:
+        yield {"event": "status", "message": f"This needs the project tools, skipping the local model ({run.model})..."}
     else:
         yield {"event": "status", "message": "Trying local model..."}
 
         try:
-            local_answer = yield from try_local_answer(user_input, run.history)
+            local_answer, action = yield from try_local_answer(user_input, run.history)
         except LLMError as e:
             yield {"event": "error", "message": str(e)}
             return
@@ -596,7 +649,8 @@ def _run_steps(run, interactive):
             yield {"event": "final_response", "response": local_answer}
             return
 
-        yield {"event": "status", "message": "Local model needs tools, continuing..."}
+        run.model = LOOP_MODELS[action]
+        yield {"event": "status", "message": f"Local model needs tools, continuing with {run.model}..."}
 
     run.messages = [system_message(), *run.history, {"role": "user", "content": user_input}]
 

@@ -143,4 +143,10 @@ TOOLS = {
             "limit": {"type": "integer", "description": "Maximum number of turns (default 10)"},
         }),
     },
+    "load_skill": {
+        "func": "tools.skills.load_skill",
+        "description": "Load the full instructions of a skill listed under SKILLS in the system prompt. Call it before doing a task a skill covers",
+        "risk": "low",
+        "parameters": _params({"name": {"type": "string", "description": "Skill name from the SKILLS list"}}, ["name"]),
+    },
 }

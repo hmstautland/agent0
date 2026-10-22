@@ -37,14 +37,8 @@ Use edit_file (path, old_text, new_text) to change part of a file - old_text mus
 copied exactly from what read_files returned, and must be unique in the file.
 Only use write_file when you can supply the complete new file content.
 
-MOVING CODE OUT OF A FILE:
-- Never delete a block of code without first putting it somewhere else. Removing a
-  <script> tag while leaving its code behind, or deleting the code entirely, is wrong.
-- Decide the destination yourself, following the project layout (JavaScript belongs in
-  static/, templates in templates/). Say which file you chose in your final answer.
-- Write the destination file FIRST, then remove the block from the source.
-- For "no scripts defined in the HTML, only loaded" style requests, use
-  extract_inline_scripts - it moves the code and links it in one step.
+Never delete code without first writing it somewhere else. To move code between files,
+load the move-code-out-of-file skill first.
 
 AFTER CHANGING ANY TEMPLATE OR STATIC FILE:
 - Run verify_app, and report what it said. If it reports FAILED, fix the problem before

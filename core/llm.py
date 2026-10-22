@@ -13,22 +13,23 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
 # conversation as messages and supports Ollama's built-in tool calling.
 OLLAMA_CHAT_URL = os.getenv("OLLAMA_CHAT_URL", OLLAMA_URL.rsplit("/api/", 1)[0] + "/api/chat")
 
-# Light model for direct answers and the local-first check. qwen3:4b is both
-# faster than mistral:7b on CPU (34 vs 24 tok/s generation, 206 vs 100 tok/s
-# prompt) and, unlike mistral, it admits when a request needs the file tools
-# instead of inventing an answer about code it never read.
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:8b")
+# General model: direct answers, the local-first check, and the tool loop for
+# tasks that are not about code (web search, calendar, notes, ...). A
+# mixture-of-experts model with ~3B active parameters, so it generates about
+# as fast as the dense qwen3:8b it replaced while knowing far more.
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.6:35b")
 
-# Model used once the request escalates to the tool loop. Reading and editing
-# files needs far more instruction-following than answering a question, and a
-# 4B model cannot drive a multi-step edit reliably.
+# Model for the tool loop when the task is about code or the project's files.
+# Reading and editing files needs far more instruction-following than
+# answering a question, and a small model cannot drive a multi-step edit.
 OLLAMA_CODE_MODEL = os.getenv("OLLAMA_CODE_MODEL", "qwen3-coder:30b")
 
 # Ollama defaults to a 4096 token context, and overflow is silently truncated -
 # the model then loses the instructions and replies with prose or invented tool
-# names. The light model only sees short prompts, so it gets a small window; the
-# tool loop accumulates file reads, so the code model gets a much larger one.
-OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
+# names. Both models can run the tool loop, which accumulates file reads and
+# search results, so both get a large window. The window is per model, not per
+# call: Ollama reloads a model whenever num_ctx changes.
+OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "32768"))
 OLLAMA_CODE_NUM_CTX = int(os.getenv("OLLAMA_CODE_NUM_CTX", "32768"))
 
 # Reading a large file into the prompt can take a while, especially without a GPU

@@ -21,7 +21,7 @@ def fake_chat(*replies):
     calls = []
 
     def chat(messages, model=None, tools=None, format=None, think=None):
-        calls.append({"messages": [dict(m) for m in messages], "tools": tools, "format": format})
+        calls.append({"messages": [dict(m) for m in messages], "model": model, "tools": tools, "format": format})
         reply = queue.pop(0)
         if isinstance(reply, Exception):
             raise reply
@@ -391,24 +391,33 @@ def test_play_command_via_stream_yields_audio_field(monkeypatch, client):
     "where do I set up a new bank account",
 ])
 def test_plain_questions_are_not_routed_straight_to_the_tool_loop(text):
-    assert not agent_mod.needs_tools(text)
+    assert agent_mod.tool_route(text) is None
 
 
 @pytest.mark.parametrize("text", [
     "fix the template",
-    "which file checks the login",
-    "list project files",
-    "create static/new.js and include it in the template",
     "read this codebase",
-    "write file a.txt",
+    "create static/new.js and include it in the template",
     "Where is MAX_STEPS defined and how is it used?",
     "what does run_agent do",
-    "what does needs_tools() return",
+    "what does tool_route() return",
     "where is the step limit configured",
     "where is the retry limit defined",
+    "update the README.md to describe run_agent()",
 ])
-def test_file_tasks_skip_the_local_first_step(text):
-    assert agent_mod.needs_tools(text)
+def test_code_tasks_skip_the_local_first_step_and_go_to_the_code_model(text):
+    assert agent_mod.tool_route(text) == agent_mod.OLLAMA_CODE_MODEL
+
+
+@pytest.mark.parametrize("text", [
+    "write file a.txt",
+    "fix the typos in README.md",
+    "tidy up note_20261017_202953_668934.txt",
+    "which file has my shopping list",
+    "list project files",
+])
+def test_text_file_tasks_skip_the_local_first_step_and_go_to_the_general_model(text):
+    assert agent_mod.tool_route(text) == agent_mod.OLLAMA_MODEL
 
 
 def test_tool_loop_sends_a_pruned_history_to_the_model_but_keeps_the_full_one(monkeypatch):
@@ -548,7 +557,7 @@ def test_local_first_stream_decodes_escapes_and_passes_thinking_through(monkeypa
 
     assert [e["text"] for e in events if e["kind"] == "thinking"] == ["hmm"]
     assert "".join(e["text"] for e in events if e["kind"] == "content") == 'say "hi"\nbye'
-    assert result == 'say "hi"\nbye'
+    assert result == ('say "hi"\nbye', "none")
 
 
 @pytest.mark.parametrize("result", [
@@ -575,3 +584,58 @@ def test_a_failed_edit_is_recorded_as_failed_in_the_turn_history(monkeypatch):
     list(agent_mod._run_steps(run, interactive=True))
 
     assert run.actions == ["edit_file a.py (failed)"]
+
+
+@pytest.mark.parametrize("action, model", [
+    ("needs_tools", agent_mod.OLLAMA_MODEL),
+    ("needs_code", agent_mod.OLLAMA_CODE_MODEL),
+])
+def test_the_local_first_decision_picks_the_model_for_the_tool_loop(monkeypatch, action, model):
+    chat = fake_chat(local(action), answer("done"))
+    monkeypatch.setattr(agent_mod, "chat_stream", chat)
+
+    assert agent_mod.run_agent("what's on the news today") == "done"
+
+    assert chat.calls[1]["model"] == model
+
+
+def test_an_unknown_local_first_action_falls_back_to_the_general_model(monkeypatch):
+    chat = fake_chat(local("maybe"), answer("done"))
+    monkeypatch.setattr(agent_mod, "chat_stream", chat)
+
+    agent_mod.run_agent("what's on the news today")
+
+    assert chat.calls[1]["model"] == agent_mod.OLLAMA_MODEL
+
+
+def test_file_tasks_run_the_tool_loop_on_the_code_model(monkeypatch):
+    chat = fake_chat(answer("done"))
+    monkeypatch.setattr(agent_mod, "chat_stream", chat)
+
+    agent_mod.run_agent("fix the template")
+
+    assert [c["model"] for c in chat.calls] == [agent_mod.OLLAMA_CODE_MODEL]
+
+
+def test_a_resumed_run_continues_on_the_model_it_started_with(monkeypatch, client):
+    chat = fake_chat(local("needs_tools"), tool_call("edit_file", path="notes.txt", old_text="a", new_text="b"), answer("done"))
+    monkeypatch.setattr(agent_mod, "chat_stream", chat)
+    monkeypatch.setattr(agent_mod, "execute_tool", lambda action, args: "OK")
+
+    parked = last(stream(client, input="tidy up my shopping list"))
+    assert last(stream(client, run_id=parked["run_id"], permission_decision="y"))["response"] == "done"
+
+    assert [c["model"] for c in chat.calls[1:]] == [agent_mod.OLLAMA_MODEL] * 2
+
+
+def test_the_models_thinking_is_kept_in_the_tool_loop_history(monkeypatch):
+    call = {**tool_call("search_web", query="a"), "thinking": "search first, then answer"}
+    chat = fake_chat(local("needs_tools"), call, answer("done"))
+    monkeypatch.setattr(agent_mod, "chat_stream", chat)
+    monkeypatch.setattr(agent_mod, "ask_cli", lambda *a, **k: True)
+    monkeypatch.setattr(webmod, "search_web", lambda query: [{"title": "x"}])
+
+    agent_mod.run_agent("search for a")
+
+    sent = [m for m in chat.calls[-1]["messages"] if m["role"] == "assistant"]
+    assert sent[-1]["thinking"] == "search first, then answer"

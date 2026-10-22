@@ -101,7 +101,7 @@ def test_chat_stream_turns_an_error_chunk_into_llm_error(monkeypatch):
         drain(llm.chat_stream([{"role": "user", "content": "hi"}]))
 
 
-def test_payload_uses_the_larger_context_only_for_the_code_model():
+def test_payload_gives_each_model_its_own_context_window():
     def num_ctx(model):
         return llm._payload([], model, None, None, None, False)["options"]["num_ctx"]
 
