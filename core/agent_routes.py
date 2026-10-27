@@ -230,9 +230,10 @@ async def ask(request: Request):
         return render_index(request, **await run_in_threadpool(page_context, events))
 
     except Exception as e:
+        log_event({"type": "ask_error", "error": repr(e)})
         return templates.TemplateResponse(name="index.html", request=request, context={
             "response": "",
-            "error": str(e)
+            "error": "Something went wrong. Please try again later."
         })
 
 
