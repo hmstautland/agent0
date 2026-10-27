@@ -1,5 +1,6 @@
 import json
 import os
+from urllib.parse import urlparse
 
 import requests
 
@@ -9,9 +10,21 @@ from core import cancel
 # OLLAMA_URL pointing at another host keeps working for the chat URL below.
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
 
+
+def _validate_ollama_chat_url(url):
+    parsed = urlparse(url)
+    if parsed.scheme != "http":
+        raise ValueError("OLLAMA_CHAT_URL must use http://")
+    if parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
+        raise ValueError("OLLAMA_CHAT_URL must point to a local loopback host")
+    return url
+
+
 # The agent loop talks to /api/chat on the same local server: it carries the
 # conversation as messages and supports Ollama's built-in tool calling.
-OLLAMA_CHAT_URL = os.getenv("OLLAMA_CHAT_URL", OLLAMA_URL.rsplit("/api/", 1)[0] + "/api/chat")
+OLLAMA_CHAT_URL = _validate_ollama_chat_url(
+    os.getenv("OLLAMA_CHAT_URL", OLLAMA_URL.rsplit("/api/", 1)[0] + "/api/chat")
+)
 
 # General model: direct answers, the local-first check, and the tool loop for
 # tasks that are not about code (web search, calendar, notes, ...). A
