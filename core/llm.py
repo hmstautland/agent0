@@ -13,11 +13,24 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
 
 def _validate_ollama_chat_url(url):
     parsed = urlparse(url)
+
     if parsed.scheme != "http":
         raise ValueError("OLLAMA_CHAT_URL must use http://")
     if parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
         raise ValueError("OLLAMA_CHAT_URL must point to a local loopback host")
-    return url
+    if parsed.username or parsed.password:
+        raise ValueError("OLLAMA_CHAT_URL must not include userinfo")
+    if parsed.query or parsed.fragment:
+        raise ValueError("OLLAMA_CHAT_URL must not include query or fragment")
+    if parsed.path != "/api/chat":
+        raise ValueError("OLLAMA_CHAT_URL path must be exactly /api/chat")
+    if parsed.port not in (None, 11434):
+        raise ValueError("OLLAMA_CHAT_URL must use port 11434")
+
+    host = parsed.hostname
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    return f"http://{host}:11434/api/chat"
 
 
 # The agent loop talks to /api/chat on the same local server: it carries the
