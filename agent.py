@@ -1,13 +1,16 @@
 import importlib
+import inspect
 import json
 import re
+from datetime import datetime
 
-from core.llm import query_llm, OLLAMA_CODE_MODEL
+from core.llm import LLMError, chat, OLLAMA_CODE_MODEL
 from core.speech_to_text import listen
 from config.system_prompt import SYSTEM_PROMPT
 from core.logger import log_event
-from core.permission import request_permission, PermissionRequired
-from features.calendar.calendar import create_event, is_calendar_event_list, parse_create_command
+from core.permission import ask_cli, needs_approval
+from core.runs import AgentRun, park
+from features.calendar.calendar import calendar_view_for, create_event_from_command, is_calendar_event_list
 from tools.registry import TOOLS
 from features.audio.player import describe_play_result, parse_play_command, play_audio_file
 from tools.files import parse_script_refactor_command
@@ -15,30 +18,32 @@ from tools.files import parse_script_refactor_command
 # 🔁 Agent Flow
 # 1. User input
 # 2. Try to answer directly from the local model (no tools)
-# 3. If that's not enough, LLM decides next action using tools
-# 4. Permission check
-# 5. Tool executes
+# 3. If that's not enough, the LLM picks tools (Ollama's built-in tool calling)
+# 4. Permission check - a call that needs approval parks the run (core/runs.py)
+#    until the user answers, then exactly that call runs
+# 5. Tool executes (errors are handed back to the model to correct)
 # 6. Result fed back to LLM
-# 7. Repeat until complete
+# 7. Repeat until the model answers without calling a tool
 
 LOCAL_ONLY_PROMPT = """
 You are a helpful assistant. Try to answer the user's question directly, from your own knowledge, without using any tools or external access.
 
-Respond ONLY in JSON.
+If you can answer directly, reply {"action": "none", "response": "your answer"}.
 
-If you can answer directly:
-{{
-  "action": "none",
-  "response": "your answer"
-}}
-
-If you cannot answer without a tool (web search, reading/writing files, email, calendar, etc.):
-{{
-  "action": "needs_tools"
-}}
-
-User question: {user_input}
+If you cannot answer without a tool (web search, reading/writing project files, calendar, notes, saved audio, etc.), reply {"action": "needs_tools"}.
 """
+
+# Structured output for the local-first check, so the reply is always this JSON
+LOCAL_ANSWER_FORMAT = {
+    "type": "object",
+    "properties": {
+        "action": {"type": "string", "enum": ["none", "needs_tools"]},
+        "response": {"type": "string"},
+    },
+    "required": ["action"],
+}
+
+MAX_STEPS = 8
 
 # Requests that talk about project files can never be answered from memory.
 # Asked directly, the local model replies with manual "open the file and copy
@@ -50,13 +55,17 @@ FILE_TASK_RE = re.compile(
     re.I,
 )
 
+# External tools the user approved in this CLI process (the web keeps its own
+# per login session, see core/agent_routes.py)
+_cli_granted = set()
+
 
 def needs_tools(user_input):
     return bool(user_input and FILE_TASK_RE.search(user_input))
 
 
 def parse_decision(raw):
-    """Parse the model's decision JSON. Returns a dict, or None if there is none.
+    """Parse a JSON decision out of model text. Returns a dict, or None if there is none.
 
     Small models wrap the object in markdown fences or an apology, so the JSON
     is dug out of the surrounding text rather than treated as a failure.
@@ -94,13 +103,13 @@ def parse_decision(raw):
 def planned_first_decision(user_input):
     """Force the right first tool for intents the local model gets wrong.
 
-    Returned as a normal decision, so it still goes through the permission
+    Returned as a normal tool call, so it still goes through the permission
     gate and the result is still fed back into the loop.
     """
     script_args = parse_script_refactor_command(user_input)
     if script_args is not None:
         return {
-            "action": "extract_inline_scripts",
+            "name": "extract_inline_scripts",
             "arguments": script_args,
             "reason": "Move the inline script out to its own file and link it",
         }
@@ -118,23 +127,32 @@ def decision_args(decision):
     return {}
 
 
+def _tool_func(action):
+    module_path, func_name = TOOLS[action]["func"].rsplit(".", 1)
+    return getattr(importlib.import_module(module_path), func_name)
+
+
 def execute_tool(action, args):
-    tool_info = TOOLS[action]
-    module_path, func_name = tool_info["func"].rsplit(".", 1)
-
-    module = importlib.import_module(module_path)
-    func = getattr(module, func_name)
-
-    return func(**args)
+    return _tool_func(action)(**args)
 
 
-def build_tool_prompt():
-    lines = []
+def tool_schemas():
+    """TOOLS in the shape Ollama's built-in tool calling expects."""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": tool["description"],
+                "parameters": tool.get("parameters") or {"type": "object", "properties": {}},
+            },
+        }
+        for name, tool in TOOLS.items()
+    ]
 
-    for name, tool in TOOLS.items():
-        lines.append(f"- {name}: {tool['description']}")
 
-    return "\n".join(lines)
+def system_message():
+    return {"role": "system", "content": f"{SYSTEM_PROMPT}\nCurrent date and time: {datetime.now():%A %Y-%m-%d %H:%M}\n"}
 
 
 def try_local_answer(user_input):
@@ -142,39 +160,296 @@ def try_local_answer(user_input):
 
     Returns the answer text, or None if the model needs a tool to proceed.
     """
-    raw = query_llm(LOCAL_ONLY_PROMPT.format(user_input=user_input))
+    message = chat(
+        [{"role": "system", "content": LOCAL_ONLY_PROMPT}, {"role": "user", "content": user_input}],
+        format=LOCAL_ANSWER_FORMAT,
+    )
+    raw = message.get("content") or ""
     log_event({"type": "llm_raw_decision", "raw": raw, "mode": "local_first"})
 
     decision = parse_decision(raw)
     if decision is None:
-        # The local model was asked to respond in JSON and didn't - in
-        # practice this means it got confused/refused (e.g. "I can't
-        # interact with your calendar") rather than gave a real answer,
-        # so treat it as needing a tool instead of trusting it as final.
+        # Asked for JSON and didn't give it - in practice the model got
+        # confused or refused ("I can't interact with your calendar") rather
+        # than gave a real answer, so treat it as needing a tool.
         return None
 
-    action = decision.get("action")
-    if action in (None, "none"):
-        return decision.get("response", raw)
+    if decision.get("action") in (None, "none") and decision.get("response"):
+        return decision["response"]
 
     return None
 
 
-def _run_steps(user_input, permission_decisions):
-    """Core multi-step tool loop, shared by run_agent and stream_agent.
+def _normalize_args(args):
+    if isinstance(args, str):
+        try:
+            args = json.loads(args)
+        except ValueError:
+            return {}
+    return args if isinstance(args, dict) else {}
+
+
+# qwen3-coder's own tool-call syntax. Ollama normally turns it into
+# tool_calls, but when the model writes text before the call the parse can
+# fail and the raw markup lands in content instead.
+XML_CALL_RE = re.compile(r"<function=([\w.-]+)>(.*?)(?:</function>|$)", re.S)
+XML_PARAM_RE = re.compile(r"<parameter=([\w.-]+)>\n?(.*?)\n?</parameter>", re.S)
+
+
+def _xml_param_value(tool_name, key, text):
+    """Values arrive as text; decode JSON (numbers, lists, booleans) unless the schema says string."""
+    schema = ((TOOLS.get(tool_name) or {}).get("parameters") or {}).get("properties", {}).get(key, {})
+    if schema.get("type", "string") == "string":
+        return text
+    try:
+        return json.loads(text)
+    except ValueError:
+        return text
+
+
+def _xml_tool_calls(content):
+    calls = []
+    for name, body in XML_CALL_RE.findall(content):
+        args = {key: _xml_param_value(name, key, value) for key, value in XML_PARAM_RE.findall(body)}
+        calls.append({"name": name, "arguments": args})
+    return calls
+
+
+def _calls_from_message(message):
+    """The tool calls in an assistant message, as [{"name", "arguments", "reason"}]."""
+    content = message.get("content") or ""
+    reason = content.split("<function=", 1)[0].replace("<tool_call>", "").strip() or None
+    calls = [
+        {"name": (call.get("function") or {}).get("name"),
+         "arguments": _normalize_args((call.get("function") or {}).get("arguments")),
+         "reason": reason}
+        for call in message.get("tool_calls") or []
+    ]
+    if calls:
+        return calls
+
+    calls = [dict(call, reason=reason) for call in _xml_tool_calls(content)]
+    if calls:
+        return calls
+
+    # Some models still write the call as JSON text instead of using the
+    # tool-calling API - accept it when it names a real tool.
+    decision = parse_decision(content)
+    action = decision.get("action") or decision.get("name") if decision else None
+    if isinstance(action, str) and action in TOOLS:
+        return [{"name": action, "arguments": decision_args(decision), "reason": decision.get("reason")}]
+
+    return []
+
+
+def _final_text(message):
+    # qwen3-coder sometimes leaves a dangling <tool_call> tag after its answer
+    content = re.sub(r"</?tool_call>", "", message.get("content") or "").strip()
+    decision = parse_decision(content) if content.startswith(("{", "```")) else None
+    if decision and decision.get("action") == "none" and decision.get("response"):
+        return decision["response"]
+    return content or "The model returned an empty answer."
+
+
+def _signature(name, args):
+    return f"{name}:{json.dumps(args, sort_keys=True, default=str)}"
+
+
+def _tool_result(run, name, text):
+    run.messages.append({"role": "tool", "tool_name": str(name), "content": text})
+
+
+def _result_text(result):
+    if isinstance(result, str):
+        return result
+    try:
+        return json.dumps(result, default=str)
+    except Exception:
+        return str(result)
+
+
+def _assistant_message(content, calls):
+    return {
+        "role": "assistant",
+        "content": content or "",
+        "tool_calls": [{"function": {"name": c["name"], "arguments": c["arguments"]}} for c in calls],
+    }
+
+
+def _run_call(run, call, approved):
+    """Run (or record the denial of) one tool call. Returns True if the run is finished."""
+    name, args = call["name"], call["arguments"]
+    tool = TOOLS[name]
+    run.attempted.add(_signature(name, args))
+
+    if not approved:
+        log_event({"type": "permission_denied", "action": name, "args": args})
+        _tool_result(run, name, (
+            "ERROR: the user denied permission for this call. Do not try it again. "
+            "Finish with an answer that says what you could not do."
+        ))
+        yield {"event": "status", "message": f"Permission denied for {name}, letting the model finish..."}
+        return False
+
+    yield {"event": "status", "message": f"Executing tool: {name}"}
+    try:
+        result = execute_tool(name, args)
+    except Exception as e:
+        try:
+            expected = str(inspect.signature(_tool_func(name)))
+        except Exception:
+            expected = "see the tool description"
+        log_event({"type": "tool_error", "step": run.step, "action": name, "args": args, "error": repr(e)})
+        _tool_result(run, name, f"ERROR {type(e).__name__}: {e}. {name} takes {expected}.")
+        yield {"event": "status", "message": f"Tool {name} failed ({type(e).__name__}), letting the model correct it..."}
+        return False
+
+    # A change can make an earlier identical call (verify_app, read_files)
+    # worth running again, so the repeat guard starts over.
+    if tool.get("risk") == "high":
+        run.attempted.clear()
+
+    # A newly created event is shown in the calendar with the final answer
+    if name == "create_calendar_event" and args.get("start"):
+        run.show_calendar = calendar_view_for(args["start"])
+
+    result_text = _result_text(result)
+    log_event({
+        "type": "tool_execution",
+        "step": run.step,
+        "action": name,
+        "args": args,
+        "result": result_text[:500]
+    })
+
+    yield {"event": "status", "message": f"Tool {name} completed."}
+
+    # A calendar event list is shown as the month-grid calendar, not fed
+    # back to the LLM for a text summary.
+    if is_calendar_event_list(result):
+        first = result[0]
+        yield {
+            "event": "final_response",
+            "response": "",
+            "show_calendar": {"year": first["date"].year, "month": first["date"].month},
+        }
+        return True
+
+    _tool_result(run, name, result_text)
+    return False
+
+
+def _handle_call(run, call, interactive):
+    """Check, approve and run one queued call. Returns "continue", "paused" or "finished"."""
+    name, args = call["name"], call["arguments"]
+    tool = TOOLS.get(name) if isinstance(name, str) else None
+
+    if tool is None:
+        # Hallucinated tool - correct it instead of giving up
+        if run.unknown_tool_retries > 0:
+            run.unknown_tool_retries -= 1
+            _tool_result(run, name, f"ERROR: there is no tool called '{name}'. Use one of: {', '.join(TOOLS)}.")
+            yield {"event": "status", "message": f"No such tool '{name}', retrying..."}
+            return "continue"
+
+        yield {"event": "error", "message": f"Unknown action: {name}"}
+        return "finished"
+
+    # Small models get stuck repeating the same call - tell them instead of re-running it
+    if _signature(name, args) in run.attempted:
+        _tool_result(run, name, (
+            "You already made this exact call - its result is above. Do not repeat it. "
+            "Choose a different action, or give your final answer."
+        ))
+        return "continue"
+
+    approved = True
+    if needs_approval(name, tool, run.granted):
+        if not interactive:
+            run.pending = call
+            run_id = park(run)
+            yield {
+                "event": "permission_required",
+                "run_id": run_id,
+                "action": name,
+                "args": args,
+                "risk": tool["risk"],
+                "external": bool(tool.get("external")),
+                "reason": call.get("reason"),
+            }
+            return "paused"
+
+        yield {"event": "status", "message": f"Requesting permission for tool: {name}"}
+        approved = ask_cli(name, args, tool["risk"], reason=call.get("reason"))
+        if approved and tool.get("external"):
+            run.granted.add(name)
+
+    finished = yield from _run_call(run, call, approved)
+    return "finished" if finished else "continue"
+
+
+def _loop(run, interactive, approved=None):
+    """The tool loop. Picks up a parked run's pending call first, if there is one."""
+    if run.pending is not None:
+        call, run.pending = run.pending, None
+        if approved and TOOLS[call["name"]].get("external"):
+            run.granted.add(call["name"])
+        finished = yield from _run_call(run, call, approved)
+        if finished:
+            return
+
+    while True:
+        while run.queue:
+            outcome = yield from _handle_call(run, run.queue.pop(0), interactive)
+            if outcome != "continue":
+                return
+
+        if run.step >= MAX_STEPS:
+            yield {"event": "final_response", "response": "Max steps reached without conclusion."}
+            return
+
+        run.step += 1
+        yield {"event": "status", "message": f"Step {run.step}: asking the LLM for next action..."}
+        try:
+            message = chat(run.messages, model=OLLAMA_CODE_MODEL, tools=tool_schemas())
+        except LLMError as e:
+            yield {"event": "error", "message": str(e)}
+            return
+
+        log_event({"type": "llm_raw_decision", "raw": message.get("content"), "tool_calls": message.get("tool_calls")})
+        yield {"event": "status", "message": "LLM decision complete."}
+
+        calls = _calls_from_message(message)
+        if not calls:
+            final = {"event": "final_response", "response": _final_text(message)}
+            if run.show_calendar:
+                final["show_calendar"] = run.show_calendar
+            yield final
+            return
+
+        yield {"event": "status", "message": f"LLM chose action: {', '.join(str(c['name']) for c in calls)}"}
+        # Keep the model's own text only when the calls came through the API;
+        # a call written into the text would otherwise appear twice.
+        native = bool(message.get("tool_calls"))
+        run.messages.append(_assistant_message(message.get("content") if native else calls[0]["reason"], calls))
+        run.queue = calls
+
+
+def _run_steps(run, interactive):
+    """Shortcuts, the local-first answer, then the tool loop. Shared by run_agent and stream_agent.
 
     Yields status/error/final_response/permission_required events. A
-    permission_required event is only ever produced when permission_decisions
-    is not None (the web flow) - with None (the CLI flow), request_permission
-    blocks on input() instead of raising.
+    permission_required event is only produced when not interactive (the web
+    flow) - interactively (the CLI) approval is asked on the terminal instead.
     """
+    user_input = run.user_input
+
     # Bypass the LLM for calendar-creation commands - the local model isn't
     # reliable at recognizing this needs the calendar tool rather than
     # answering "I can't do that" directly.
-    calendar_command = parse_create_command(user_input)
-    if calendar_command is not None:
-        result = create_event(**calendar_command)
-        yield {"event": "final_response", "response": f"{result}\n\nWould you like to see your calendar?"}
+    calendar_result = create_event_from_command(user_input)
+    if calendar_result is not None:
+        yield {"event": "final_response", **calendar_result}
         return
 
     # Bypass the LLM for "play ..." requests - same reasoning as the calendar
@@ -192,195 +467,70 @@ def _run_steps(user_input, permission_decisions):
     else:
         yield {"event": "status", "message": "Trying local model..."}
 
-        local_answer = try_local_answer(user_input)
+        try:
+            local_answer = try_local_answer(user_input)
+        except LLMError as e:
+            yield {"event": "error", "message": str(e)}
+            return
+
         if local_answer is not None:
             yield {"event": "final_response", "response": local_answer}
             return
 
         yield {"event": "status", "message": "Local model needs tools, continuing..."}
 
-    context = f"User request: {user_input}\n"
-    attempted = set()
-    json_retries_left = 2
-    unknown_action_retries_left = 2
-    pending_decision = planned_first_decision(user_input)
+    run.messages = [system_message(), {"role": "user", "content": user_input}]
 
-    MAX_STEPS = 8
-    for step in range(MAX_STEPS):
-        tool_prompt = build_tool_prompt()
-        decision_prompt = f"""
-        {SYSTEM_PROMPT}
+    planned = planned_first_decision(user_input)
+    if planned is not None:
+        run.messages.append(_assistant_message("", [planned]))
+        run.queue = [planned]
 
-        Available tools:
-        {tool_prompt}
-
-        {context}
-        """
-
-        if pending_decision is not None:
-            decision, pending_decision = pending_decision, None
-            raw = json.dumps(decision)
-        else:
-            decision = None
-            yield {"event": "status", "message": f"Step {step + 1}: asking the LLM for next action..."}
-            raw = query_llm(decision_prompt, model=OLLAMA_CODE_MODEL)
-
-        log_event({"type": "llm_raw_decision", "raw": raw})
-        yield {"event": "status", "message": "LLM decision complete."}
-
-        if decision is None:
-            decision = parse_decision(raw)
-
-        if decision is None:
-            # Mid-task prose is a broken contract, not an answer - nudge once,
-            # then fall back to handing the text back as the reply.
-            if json_retries_left > 0:
-                json_retries_left -= 1
-                context += (
-                    "\nYour last reply was not valid JSON and was ignored. "
-                    "Reply with ONLY a JSON object using the action format.\n"
-                )
-                yield {"event": "status", "message": "Model broke the JSON format, retrying..."}
-                continue
-
-            yield {"event": "final_response", "response": raw}  # fallback if model keeps failing JSON
-            return
-
-        action = decision.get("action")
-        yield {"event": "status", "message": f"LLM chose action: {action}"}
-
-        # Final answer - no more action needed
-        if action == "none":
-            yield {"event": "final_response", "response": decision.get("response")}
-            return
-
-        tool = TOOLS.get(action)
-        if not tool:
-            # Hallucinated tool - correct it instead of giving up
-            if unknown_action_retries_left > 0:
-                unknown_action_retries_left -= 1
-                context += (
-                    f"\nStep {step}:\nAction: {action}\n"
-                    f"Result: There is no tool called '{action}'. "
-                    f"Use one of: {', '.join(TOOLS)}.\n"
-                )
-                yield {"event": "status", "message": f"No such tool '{action}', retrying..."}
-                continue
-
-            yield {"event": "error", "message": f"Unknown action: {action}"}
-            return
-
-        args = decision_args(decision)
-
-        # Small models get stuck repeating the same call - tell them instead of re-running it
-        signature = f"{action}:{json.dumps(args, sort_keys=True, default=str)}"
-        if signature in attempted:
-            context += (
-                f"\nStep {step}:\nAction: {action}\n"
-                "Result: You already ran this exact action - its result is above. "
-                "Do not repeat it. Choose a different action, or finish with action 'none'.\n"
-            )
-            continue
-        attempted.add(signature)
-
-        yield {"event": "status", "message": f"Requesting permission for tool: {action}"}
-
-        try:
-            approved = request_permission(action, args, tool["risk"], decisions=permission_decisions, reason=decision.get("reason"))
-        except PermissionRequired as pr:
-            yield {
-                "event": "permission_required",
-                "action": pr.action,
-                "args": pr.tool_args,
-                "risk": pr.risk,
-                "reason": pr.reason,
-                "input": user_input,
-            }
-            return
-        except Exception as e:
-            yield {"event": "error", "message": str(e)}
-            return
-
-        if not approved:
-            yield {"event": "final_response", "response": "Action denied"}
-            return
-
-        yield {"event": "status", "message": f"Executing tool: {action}"}
-        result = execute_tool(action, args)
-
-        # Safely serialize result for logging (some tools return lists/dicts)
-        try:
-            result_preview = result if isinstance(result, str) else json.dumps(result, default=str)
-        except Exception:
-            result_preview = str(result)
-
-        log_event({
-            "type": "tool_execution",
-            "step": step,
-            "action": action,
-            "args": args,
-            "result": result_preview[:500]
-        })
-
-        yield {"event": "status", "message": f"Tool {action} completed."}
-
-        # A calendar event list is shown as the month-grid calendar, not fed
-        # back to the LLM for a text summary.
-        if is_calendar_event_list(result):
-            first = result[0]
-            yield {
-                "event": "final_response",
-                "response": "",
-                "show_calendar": {"year": first["date"].year, "month": first["date"].month},
-            }
-            return
-
-        # Feed result back into context
-        context += f"\nStep {step}:\nAction: {action}\nResult: {result}\n"
-
-    yield {"event": "final_response", "response": "Max steps reached without conclusion."}
+    yield from _loop(run, interactive)
 
 
-def run_agent(user_input, permission_decisions=None):
+def run_agent(user_input):
     """CLI/synchronous entry point. Drains _run_steps and returns the final text.
 
-    permission_decisions=None makes request_permission fall back to an
-    interactive input() prompt, so a permission_required event is not
-    expected here - if one still arrives (e.g. called with a decisions dict,
-    as the non-streaming web route does), it's re-raised for the caller.
+    Approvals are asked on the terminal; external tools approved once stay
+    approved for the rest of the CLI session.
     """
     log_event({"type": "user_input", "input": user_input})
     print(f"Input: {user_input}")
 
     final_response = "Max steps reached without conclusion."
+    run = AgentRun(user_input, granted=_cli_granted)
 
-    for event in _run_steps(user_input, permission_decisions):
+    for event in _run_steps(run, interactive=True):
         etype = event.get("event")
 
         if etype == "status":
             print(event["message"])
         elif etype in ("final_response", "error"):
             final_response = event.get("response", event.get("message"))
-            if event.get("show_calendar"):
-                # Hand the month to the caller (core/agent_routes.py's /ask)
-                # so it can open the month-grid calendar.
+            # A calendar view with no text (an LLM-chosen read_calendar) goes
+            # to the caller as the month to open; text is printed as is.
+            if event.get("show_calendar") and not final_response:
                 final_response = {"show_calendar": event["show_calendar"]}
-        elif etype == "permission_required":
-            raise PermissionRequired(event["action"], event["args"], event["risk"], reason=event.get("reason"))
 
     return final_response
 
 
-def stream_agent(user_input, permission_decisions=None):
-    """Web entry point. Yields status/final_response/error/permission_required events."""
+def stream_agent(user_input, owner=None, granted=()):
+    """Web entry point. Yields status/final_response/error/permission_required events.
+
+    owner is the login session id (only it can resume a parked run); granted
+    is the external tools that session already approved.
+    """
     log_event({"type": "user_input", "input": user_input, "stream": True})
+    run = AgentRun(user_input, owner=owner, granted=set(granted))
+    yield from _run_steps(run, interactive=False)
 
-    # Empty (not None) decisions map for the web flow, so request_permission
-    # raises PermissionRequired instead of blocking on input().
-    if permission_decisions is None:
-        permission_decisions = {}
 
-    yield from _run_steps(user_input, permission_decisions)
+def resume_agent(run, approved):
+    """Continue a parked run (core.runs.take) with the user's answer for its pending call."""
+    log_event({"type": "permission_decision", "action": run.pending and run.pending["name"], "approved": approved})
+    yield from _loop(run, interactive=False, approved=approved)
 
 
 if __name__ == "__main__":

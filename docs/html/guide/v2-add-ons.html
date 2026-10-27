@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>v2 add-ons - agent0</title>
+<style>
+:root { --bg: #fdfdfc; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --code: #f3f4f6; --link: #0b62d6; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #16181c; --fg: #e6e8eb; --muted: #9aa4af; --line: #343a42; --code: #22262c; --link: #6aa8ff; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { border-bottom: 1px solid var(--line); padding: 12px 16px; }
+header nav { max-width: 860px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 6px 20px; }
+header a { color: var(--fg); font-weight: 600; text-decoration: none; }
+header a:hover, header a.current { color: var(--link); }
+main { max-width: 860px; margin: 0 auto; padding: 8px 16px 64px; }
+a { color: var(--link); }
+h1, h2, h3 { line-height: 1.25; margin: 1.6em 0 0.5em; }
+h1 { font-size: 2em; } h2 { font-size: 1.45em; border-bottom: 1px solid var(--line); padding-bottom: 0.2em; }
+code { background: var(--code); border-radius: 4px; padding: 0.1em 0.35em; font-size: 0.9em;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; }
+pre { background: var(--code); border-radius: 6px; padding: 12px 14px; overflow-x: auto; }
+pre code { background: none; padding: 0; }
+pre.mermaid { background: none; text-align: center; }
+table { border-collapse: collapse; display: block; overflow-x: auto; margin: 1em 0; }
+th, td { border: 1px solid var(--line); padding: 6px 12px; text-align: left; vertical-align: top; }
+th { background: var(--code); }
+blockquote { margin: 1em 0; padding: 0 1em; color: var(--muted); border-left: 4px solid var(--line); }
+footer { max-width: 860px; margin: 0 auto; padding: 16px; color: var(--muted); font-size: 0.85em;
+  border-top: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<header><nav><a href="../index.html">Build your own agent</a><a href="index.html">All guide pages</a></nav></header>
+<main>
+<h1 id="v2-add-ons">v2 add-ons</h1>
+<p>← <a href="../index.html">Back to the guide</a></p>
+<p>Each item is small and independent. Add what you need, in any order.</p>
+<h3 id="add-a-logger">Add a logger</h3>
+<p>Append one JSON line per event (question, tool call, result, error, timing) to <code>local_storage/logs.txt</code>. When the agent does something odd, this is how you find out why. Make it self-pruning so it can't grow forever. <em>agent0:</em> <code>core/logger.py</code>.</p>
+<h3 id="add-local-storage">Add local storage</h3>
+<p>Use SQLite (<code>sqlite3</code> is in the standard library). One <code>connect()</code> helper, one <code>schema.sql</code>, one module per kind of data. Keep persistence separate from what the data means. Put everything under a git-ignored <code>local_storage/</code>. <em>agent0:</em> <code>storage/db.py</code>, <code>storage/schema.sql</code>.</p>
+<h3 id="add-conversation-memory">Add conversation memory</h3>
+<p>Store each finished turn (question, answer, one-line summary of tools used) in SQLite. Before each model call, insert the newest few turns between the system prompt and the new question. Store <strong>summaries of tool calls, not raw tool results</strong>; they are huge. Add FTS5 full-text search and expose it as a <code>search_history</code> tool for older sessions. <em>agent0:</em> <code>core/conversations.py</code>, <code>storage/conversations.py</code>.</p>
+<h3 id="add-context-files">Add context files</h3>
+<p>A markdown file the model (or any AI coding tool) reads first: what the project is, layout, conventions, what not to touch. Two kinds:</p>
+<ul>
+<li><strong>Project context</strong> (<code>CLAUDE.md</code>, <code>README.md</code>): architecture and rules, for whoever edits the code.</li>
+<li><strong>User/builder context</strong> (<code>context.md</code>): who you are, what you own, when AI should ask first.</li>
+</ul>
+<p>For your <em>runtime</em> agent, load such a file into the system prompt at startup (<code>SYSTEM_PROMPT + Path(&quot;context.md&quot;).read_text()</code>). Keep it short; every word costs context window. <em>agent0:</em> <code>CLAUDE.md</code>, <code>context.md</code>.</p>
+<h3 id="add-skills">Add skills</h3>
+<p>A skill is a markdown file of instructions for one kind of task (&quot;how to write a weekly report&quot;). Don't load all of them into the prompt. Put one line per skill in the system prompt (name + when to use it) and give the agent a <code>load_skill(name)</code> tool that returns the full text on demand. It's just another tool. Two cautions from testing with local models: answer-first routing can skip the tool loop entirely (agent0 lists the skills in the local-first prompt too), and a model may simply not call <code>load_skill</code>. Keep any rule that protects data in the system prompt itself, and use a skill for how-to detail. <em>agent0:</em> <code>tools/skills.py</code> and <code>skills/weekly-report.md</code>; a skill is a markdown file with <code>name</code>/<code>description</code> frontmatter.</p>
+<h3 id="add-a-stop-button">Add a stop button</h3>
+<p>Long runs need a cancel. Stream the model response, keep a per-run cancel flag, and close the HTTP connection to Ollama when it's set. <em>agent0:</em> <code>core/cancel.py</code>, <code>core/llm.py::chat_stream</code>.</p>
+<h3 id="add-streaming">Add streaming</h3>
+<p>Use <code>&quot;stream&quot;: true</code> and forward chunks to the browser (Server-Sent Events) so users see the model &quot;thinking&quot; live instead of staring at a spinner. <em>agent0:</em> <code>core/llm.py::chat_stream</code>, <code>core/streaming.py</code>.</p>
+<h3 id="add-context-pruning">Add context pruning</h3>
+<p>The loop appends every file read and search result, so history grows until the model's window overflows. Cap any single oversized result and replace the oldest tool results with a stub like <code>[old result removed]</code>, keeping the newest two or so. Send the model a pruned <em>copy</em>; keep the full history for yourself. <em>agent0:</em> <code>core/context.py</code>.</p>
+<h3 id="add-a-speaker-text-to-speech">Add a speaker, text-to-speech</h3>
+<p>Run a local TTS model (Kokoro-82M) behind a <code>/tts</code> endpoint and a speaker button in the UI. It's a plain UI feature, not a tool; the agent never needs to call it. Needs <code>ffmpeg</code> for MP3/OGG. <em>agent0:</em> <code>features/audio/</code>; see README's &quot;Text-to-Speech&quot;.</p>
+<h3 id="add-a-mic-speech-to-text">Add a mic, speech-to-text</h3>
+<p><code>faster-whisper</code> transcribes locally. Record in the browser, POST the audio to <code>/speech</code>, put the text into the input box. Also a plain UI feature. <em>agent0:</em> <code>core/speech_to_text.py</code>, <code>core/speech_routes.py</code>.</p>
+<h3 id="add-shortcuts-for-things-the-model-gets-wrong">Add shortcuts for things the model gets wrong</h3>
+<p>Small models are unreliable at &quot;add a meeting tomorrow at 3&quot;. Detect those with a regex before the model runs and handle them in plain code. Escalate to the model only when no shortcut matches. <em>agent0:</em> <code>features/calendar/</code>, <code>core/agent_routes.py</code>.</p>
+<h3 id="add-a-second-model">Add a second model</h3>
+<p>A fast general model for answers, a stronger one for multi-step file edits. Route by simple rules (file extension, keywords). <em>agent0:</em> <code>tool_route()</code> in <code>agent.py</code>.</p>
+<h3 id="add-tests">Add tests</h3>
+<p>Stub the model call with a fake that returns scripted messages, then assert on which tools ran. You can test the whole loop without Ollama. <em>agent0:</em> <code>tests/test_agent_flow.py</code> (<code>fake_chat</code>).</p>
+
+</main>
+<footer>Generated from the markdown docs in the agent0 repository.</footer>
+</body>
+</html>

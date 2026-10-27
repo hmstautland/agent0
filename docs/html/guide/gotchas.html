@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gotchas that cost people hours - agent0</title>
+<style>
+:root { --bg: #fdfdfc; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --code: #f3f4f6; --link: #0b62d6; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #16181c; --fg: #e6e8eb; --muted: #9aa4af; --line: #343a42; --code: #22262c; --link: #6aa8ff; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { border-bottom: 1px solid var(--line); padding: 12px 16px; }
+header nav { max-width: 860px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 6px 20px; }
+header a { color: var(--fg); font-weight: 600; text-decoration: none; }
+header a:hover, header a.current { color: var(--link); }
+main { max-width: 860px; margin: 0 auto; padding: 8px 16px 64px; }
+a { color: var(--link); }
+h1, h2, h3 { line-height: 1.25; margin: 1.6em 0 0.5em; }
+h1 { font-size: 2em; } h2 { font-size: 1.45em; border-bottom: 1px solid var(--line); padding-bottom: 0.2em; }
+code { background: var(--code); border-radius: 4px; padding: 0.1em 0.35em; font-size: 0.9em;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; }
+pre { background: var(--code); border-radius: 6px; padding: 12px 14px; overflow-x: auto; }
+pre code { background: none; padding: 0; }
+pre.mermaid { background: none; text-align: center; }
+table { border-collapse: collapse; display: block; overflow-x: auto; margin: 1em 0; }
+th, td { border: 1px solid var(--line); padding: 6px 12px; text-align: left; vertical-align: top; }
+th { background: var(--code); }
+blockquote { margin: 1em 0; padding: 0 1em; color: var(--muted); border-left: 4px solid var(--line); }
+footer { max-width: 860px; margin: 0 auto; padding: 16px; color: var(--muted); font-size: 0.85em;
+  border-top: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<header><nav><a href="../index.html">Build your own agent</a><a href="index.html">All guide pages</a></nav></header>
+<main>
+<h1 id="gotchas-that-cost-people-hours">Gotchas that cost people hours</h1>
+<p>← <a href="../index.html">Back to the guide</a></p>
+<ul>
+<li><strong><code>num_ctx</code> defaults to 4096 in Ollama</strong>, and overflow is <em>silently truncated</em>. The model then loses its instructions and invents tool names. Set it explicitly (16k–32k) and keep it constant: Ollama reloads the model whenever it changes.</li>
+<li><strong>Small models call tools badly.</strong> If it ignores tools or writes JSON into its answer, try a bigger model before rewriting your prompt. agent0 has a fallback parser for tool calls written as text (<code>agent.py</code>).</li>
+<li><strong>Errors go back to the model as text</strong>, not exceptions. It can often fix its own bad arguments.</li>
+<li><strong>Always cap the loop and every tool result's size.</strong></li>
+<li><strong>Edits:</strong> have the model use <code>edit_file(old_text, new_text)</code> instead of rewriting whole files, and back up before writing (<code>tools/files.py</code>).</li>
+<li><strong>Models are non-deterministic.</strong> Test behaviour you care about; don't trust a single good run.</li>
+<li><strong>&quot;Local&quot; is a promise you have to keep.</strong> Tools that call the web send data off your machine; mark them and ask once per session.</li>
+</ul>
+
+</main>
+<footer>Generated from the markdown docs in the agent0 repository.</footer>
+</body>
+</html>

@@ -1,12 +1,11 @@
-import json
+import pytest
 
 import core.llm as llm
 
 
 class FakeResponse:
-    def __init__(self, body=None, lines=()):
+    def __init__(self, body=None):
         self._body = body
-        self._lines = lines
 
     def raise_for_status(self):
         pass
@@ -14,32 +13,28 @@ class FakeResponse:
     def json(self):
         return self._body
 
-    def iter_lines(self, decode_unicode=True):
-        return iter(self._lines)
 
-
-def test_query_llm_returns_the_response_text_by_default(monkeypatch):
+def test_chat_sends_tools_to_the_local_chat_endpoint_and_returns_the_message(monkeypatch):
     sent = {}
+    message = {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "search_files", "arguments": {"keyword": "x"}}}]}
 
     def fake_post(url, json=None, **kwargs):
-        sent.update(json)
-        return FakeResponse({"response": "hello"})
+        sent.update(url=url, **json)
+        return FakeResponse({"message": message})
 
     monkeypatch.setattr(llm.requests, "post", fake_post)
+    tools = [{"type": "function", "function": {"name": "search_files"}}]
 
-    assert llm.query_llm("hi") == "hello"
-    assert sent["stream"] is False
+    assert llm.chat([{"role": "user", "content": "hi"}], tools=tools) == message
+    assert sent["url"] == llm.OLLAMA_CHAT_URL
+    assert sent["tools"] == tools and sent["stream"] is False
 
 
-def test_query_llm_stream_yields_chunks(monkeypatch):
-    lines = [json.dumps({"response": "he"}), "", json.dumps({"response": "llo"})]
-    sent = {}
+def test_chat_turns_connection_failures_into_llm_error(monkeypatch):
+    def refuse(*args, **kwargs):
+        raise llm.requests.ConnectionError("refused")
 
-    def fake_post(url, json=None, **kwargs):
-        sent.update(json)
-        return FakeResponse(lines=lines)
+    monkeypatch.setattr(llm.requests, "post", refuse)
 
-    monkeypatch.setattr(llm.requests, "post", fake_post)
-
-    assert list(llm.query_llm("hi", stream=True)) == ["he", "llo"]
-    assert sent["stream"] is True
+    with pytest.raises(llm.LLMError, match="Could not reach Ollama"):
+        llm.chat([{"role": "user", "content": "hi"}])

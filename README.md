@@ -13,7 +13,7 @@ User (CLI / web UI / voice)
 ## Features
 
 - Local LLM via Ollama; tries a direct answer first, escalates to the tool loop when tools are needed
-- Permission-gated tools (safe by default), diff preview before file writes, project-sandboxed file access
+- Permission-gated tools (safe by default), diff preview before file writes, project-sandboxed file access. Each approval covers exactly the call shown; web tools ask once per login session
 - Web search (DuckDuckGo) and page reading, calendar, notes, saved-audio playback
 - Text-to-speech (Kokoro) and speech-to-text (faster-whisper) from the web UI
 - All actions logged to `local_storage/logs.txt`
@@ -53,6 +53,13 @@ ollama pull qwen3:8b              # direct answers
 ollama pull qwen3-coder:30b       # tool loop (files/code)
 ```
 
+Create `.env` in the project root with the web login password and a session secret. The secret signs the login cookie, and the web app refuses to start without one of at least 32 characters:
+
+```
+APP_LOGIN_PASSWORD=<your password>
+SESSION_SECRET=<random value>      # python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
 Run:
 
 ```
@@ -76,7 +83,8 @@ pause
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `OLLAMA_MODEL` | `qwen3:8b` | Light model for direct answers |
-| `OLLAMA_CODE_MODEL` | `qwen3-coder:30b` | Model for the tool loop |
+| `OLLAMA_CODE_MODEL` | `qwen3-coder:30b` | Model for the tool loop (must support Ollama tool calling) |
+| `OLLAMA_CHAT_URL` | `http://localhost:11434/api/chat` | Local chat endpoint the agent uses |
 | `OLLAMA_NUM_CTX` | `16384` | Context window (Ollama's 4096 default silently truncates source files) |
 | `OLLAMA_TIMEOUT` | `600` | Request timeout (seconds) |
 
@@ -102,7 +110,7 @@ Open the dashboard with the 🗣️ icon in the chat bar. Weights download from 
 | `GET /tts/voices` | Voices, formats, speed range and defaults |
 | `GET /tts/files` | List/search saved audio (`q`) |
 
-All routes require a logged-in session (401 otherwise). Output goes to `local_storage/audio/`.
+All routes require a logged-in session (401 otherwise). Output goes to `local_storage/audio/` and is served at `/audio/<file>`, which also requires login.
 
 **Limits and defaults**: speed 0.5-2.0 (default 1.0); formats `wav` (default), `mp3`, `flac`, `ogg`; max 10,000 words per request; default voice Isabella.
 

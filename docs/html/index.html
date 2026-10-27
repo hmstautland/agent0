@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Build your own local agent - agent0</title>
+<style>
+:root { --bg: #fdfdfc; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --code: #f3f4f6; --link: #0b62d6; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #16181c; --fg: #e6e8eb; --muted: #9aa4af; --line: #343a42; --code: #22262c; --link: #6aa8ff; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { border-bottom: 1px solid var(--line); padding: 12px 16px; }
+header nav { max-width: 860px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 6px 20px; }
+header a { color: var(--fg); font-weight: 600; text-decoration: none; }
+header a:hover, header a.current { color: var(--link); }
+main { max-width: 860px; margin: 0 auto; padding: 8px 16px 64px; }
+a { color: var(--link); }
+h1, h2, h3 { line-height: 1.25; margin: 1.6em 0 0.5em; }
+h1 { font-size: 2em; } h2 { font-size: 1.45em; border-bottom: 1px solid var(--line); padding-bottom: 0.2em; }
+code { background: var(--code); border-radius: 4px; padding: 0.1em 0.35em; font-size: 0.9em;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; }
+pre { background: var(--code); border-radius: 6px; padding: 12px 14px; overflow-x: auto; }
+pre code { background: none; padding: 0; }
+pre.mermaid { background: none; text-align: center; }
+table { border-collapse: collapse; display: block; overflow-x: auto; margin: 1em 0; }
+th, td { border: 1px solid var(--line); padding: 6px 12px; text-align: left; vertical-align: top; }
+th { background: var(--code); }
+blockquote { margin: 1em 0; padding: 0 1em; color: var(--muted); border-left: 4px solid var(--line); }
+footer { max-width: 860px; margin: 0 auto; padding: 16px; color: var(--muted); font-size: 0.85em;
+  border-top: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<header><nav><a href="index.html" class=current>Build your own agent</a><a href="guide/index.html">All guide pages</a></nav></header>
+<main>
+<h1 id="build-your-own-local-agent">Build your own local agent</h1>
+<p>A step-by-step guide for a developer who has never set up an LLM agent. Each step works on its own and ends with something you can run. Stop whenever you have enough; the &quot;v2&quot; section is a menu, not a requirement.</p>
+<p>agent0 in this repo is the finished example. Each step names the file to peek at. Longer material lives in <a href="guide/index.html"><code>guide/</code></a> and is linked from the step that needs it.</p>
+<h2 id="the-mental-model-read-this-once">The mental model (read this once)</h2>
+<p>An agent is three things:</p>
+<ol>
+<li><strong>A model</strong> that takes text in and gives text out (here: Ollama, running on your machine).</li>
+<li><strong>Tools</strong>: plain functions you write, described to the model as JSON.</li>
+<li><strong>A loop</strong>: ask the model → if it asks for a tool, run it, hand back the result → repeat until it answers in plain text.</li>
+</ol>
+<p>That's all. Everything else (UI, memory, voice) is ordinary software around that loop.</p>
+<pre><code>user → [system prompt + history + question] → model
+          ↑                                      │ tool_call?
+          └──── tool result ◄── run function ◄───┘   no → final answer
+</code></pre>
+<p>What you build in v1, and how the parts connect:</p>
+<pre class="mermaid">flowchart LR
+    USER([You]) --&gt; UI[&quot;Web UI&lt;br/&gt;FastAPI + one HTML page&quot;]
+    UI --&gt; LOOP[&quot;Agent loop&lt;br/&gt;agent.py&quot;]
+    PROMPT[System prompt] --&gt; LOOP
+    LOOP &lt;--&gt;|&quot;HTTP /api/chat&quot;| OLLAMA[[&quot;Ollama&lt;br/&gt;localhost:11434&quot;]]
+    OLLAMA --- MODEL[(Local model)]
+    LOOP --&gt; PERM{&quot;Permission check&quot;}
+    PERM --&gt; TOOLS[&quot;Tools&lt;br/&gt;plain Python functions&quot;]
+    TOOLS --&gt; LOOP
+</pre>
+<p>Everything runs on your machine. For the flow of one message and the full agent0 architecture (with the v2 parts), see the <a href="guide/diagrams.html">diagrams</a>.</p>
+<h2 id="step-0-prerequisites">Step 0: Prerequisites</h2>
+<p>Python 3.10+, a terminal, a virtual environment and <code>pip install requests fastapi uvicorn</code>.</p>
+<p>→ <strong><a href="guide/00-prerequisites.html">Prerequisites and project setup</a></strong> (Windows, macOS, Linux)</p>
+<h2 id="step-1-install-a-local-model">Step 1: Install a local model</h2>
+<p>Install <a href="https://ollama.com/download">Ollama</a>, then <code>ollama pull qwen3:8b</code>. Ollama is a local HTTP server on <code>localhost:11434</code>; you can reach it from any terminal with <code>curl</code>.</p>
+<ul>
+<li><strong><a href="guide/01-install-ollama.html">Install and verify</a></strong></li>
+<li><a href="guide/how-ollama-works.html">How Ollama works</a></li>
+<li><a href="guide/choose-a-model.html">Choose a model for your PC</a>: a prompt that finds a good match for your hardware</li>
+</ul>
+<h2 id="step-2-talk-to-the-model">Step 2: Talk to the model</h2>
+<pre><code class="language-python"># llm.py
+import requests
+
+def chat(messages, tools=None):
+    r = requests.post(&quot;http://localhost:11434/api/chat&quot;, json={
+        &quot;model&quot;: &quot;qwen3:8b&quot;,
+        &quot;messages&quot;: messages,
+        &quot;tools&quot;: tools or [],
+        &quot;stream&quot;: False,
+        &quot;options&quot;: {&quot;num_ctx&quot;: 16384},   # see Gotchas - the default is tiny
+    }, timeout=600)
+    r.raise_for_status()
+    return r.json()[&quot;message&quot;]
+</code></pre>
+<p>Messages are <code>{&quot;role&quot;: &quot;system&quot; | &quot;user&quot; | &quot;assistant&quot; | &quot;tool&quot;, &quot;content&quot;: &quot;...&quot;}</code>. The model is stateless: you resend the whole conversation each call.</p>
+<p><em>agent0:</em> <code>core/llm.py</code> (adds streaming, structured output, error handling).</p>
+<h2 id="step-3-add-a-system-prompt">Step 3: Add a system prompt</h2>
+<p>The system prompt is the first message. It sets role, rules and tool etiquette. Keep it in its own file so you can tune it without touching logic.</p>
+<pre><code class="language-python"># system_prompt.py
+SYSTEM_PROMPT = &quot;&quot;&quot;You are a helpful assistant with access to tools.
+Call a tool when you need information; otherwise answer in plain text.
+RULES:
+- Never guess file paths; search first.
+- If a tool result starts with ERROR, fix the arguments and retry.
+&quot;&quot;&quot;
+</code></pre>
+<p>Tip: rules phrased as &quot;NEVER/ALWAYS&quot; are cheap, and you'll add one every time the model misbehaves. That is normal. <em>agent0:</em> <code>config/system_prompt.py</code>.</p>
+<h2 id="step-4-add-a-tool-and-the-loop-the-important-step">Step 4: Add a tool and the loop (the important step)</h2>
+<p>A tool = a Python function + a JSON schema telling the model its name and arguments.</p>
+<pre><code class="language-python"># tools.py
+from pathlib import Path
+
+def read_file(path: str) -&gt; str:
+    try:
+        return Path(path).read_text()[:20000]    # cap size, always
+    except Exception as e:
+        return f&quot;ERROR: {e}&quot;                     # errors go back to the model, not up the stack
+
+TOOLS = {
+    &quot;read_file&quot;: {
+        &quot;func&quot;: read_file,
+        &quot;schema&quot;: {&quot;type&quot;: &quot;function&quot;, &quot;function&quot;: {
+            &quot;name&quot;: &quot;read_file&quot;,
+            &quot;description&quot;: &quot;Read a text file and return its contents&quot;,
+            &quot;parameters&quot;: {&quot;type&quot;: &quot;object&quot;,
+                           &quot;properties&quot;: {&quot;path&quot;: {&quot;type&quot;: &quot;string&quot;}},
+                           &quot;required&quot;: [&quot;path&quot;]},
+        }},
+    },
+}
+</code></pre>
+<pre><code class="language-python"># agent.py
+from llm import chat
+from system_prompt import SYSTEM_PROMPT
+from tools import TOOLS
+
+def run_agent(question, max_steps=8):
+    messages = [{&quot;role&quot;: &quot;system&quot;, &quot;content&quot;: SYSTEM_PROMPT},
+                {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: question}]
+    schemas = [t[&quot;schema&quot;] for t in TOOLS.values()]
+
+    for _ in range(max_steps):                       # always bound the loop
+        msg = chat(messages, schemas)
+        messages.append(msg)
+        if not msg.get(&quot;tool_calls&quot;):
+            return msg[&quot;content&quot;]                    # done
+        for call in msg[&quot;tool_calls&quot;]:
+            name, args = call[&quot;function&quot;][&quot;name&quot;], call[&quot;function&quot;][&quot;arguments&quot;]
+            tool = TOOLS.get(name)
+            result = tool[&quot;func&quot;](**args) if tool else f&quot;ERROR: unknown tool {name}&quot;
+            messages.append({&quot;role&quot;: &quot;tool&quot;, &quot;tool_name&quot;: name, &quot;content&quot;: str(result)})
+    return &quot;Stopped: too many steps.&quot;
+
+if __name__ == &quot;__main__&quot;:
+    print(run_agent(input(&quot;&gt; &quot;)))
+</code></pre>
+<p>Run <code>python agent.py</code> and ask &quot;what's in README.md?&quot;. You have an agent. Adding a tool later = one function + one dict entry.</p>
+<p><em>agent0:</em> <code>agent.py</code> (<code>_run_steps</code>), <code>tools/registry.py</code>, <code>tools/files.py</code>.</p>
+<h2 id="step-5-add-permissions">Step 5: Add permissions</h2>
+<p>Give every tool a risk level and ask before anything that writes, deletes or leaves the machine. Don't rely on the prompt to keep the model safe; enforce it in code, between &quot;model asked&quot; and &quot;function ran&quot;.</p>
+<pre><code class="language-python">RISK = {&quot;read_file&quot;: &quot;low&quot;, &quot;write_file&quot;: &quot;high&quot;}
+
+def approved(name, args):
+    if RISK.get(name) == &quot;low&quot;:
+        return True
+    return input(f&quot;Allow {name}({args})? [y/N] &quot;).lower() == &quot;y&quot;
+</code></pre>
+<p>On denial, return <code>&quot;ERROR: user denied&quot;</code> as the tool result and tell the model (in the system prompt) not to retry. <em>agent0:</em> <code>core/permission.py</code>, <code>config/settings.py</code> (<code>RULES</code> overrides per tool).</p>
+<h2 id="step-6-add-a-web-ui">Step 6: Add a web UI</h2>
+<p>Wrap <code>run_agent</code> in a FastAPI route and serve one HTML page with a text box.</p>
+<p>→ <strong><a href="guide/web-ui.html">Web UI code</a></strong></p>
+<h2 id="v1-is-done">v1 is done</h2>
+<p>That's <strong>v1</strong>: model, prompt, tools, loop, approvals, UI. Commit it. Everything below is v2.</p>
+<hr />
+<h1 id="v2-add-what-you-need-in-any-order">v2: add what you need, in any order</h1>
+<p>Each item is small and independent; suggested order is by value. Details and agent0 file pointers are in <a href="guide/v2-add-ons.html">guide/v2-add-ons.md</a>.</p>
+<ul>
+<li><a href="guide/v2-add-ons.html#add-a-logger">Add a logger</a>: one JSON line per event, so you can see why it did something odd</li>
+<li><a href="guide/v2-add-ons.html#add-local-storage">Add local storage</a>: SQLite under a git-ignored <code>local_storage/</code></li>
+<li><a href="guide/v2-add-ons.html#add-conversation-memory">Add conversation memory</a>: store turns, replay the newest, search older ones</li>
+<li><a href="guide/v2-add-ons.html#add-context-files">Add context files</a>: <code>CLAUDE.md</code> / <code>context.md</code> the model reads first</li>
+<li><a href="guide/v2-add-ons.html#add-skills">Add skills</a>: markdown instructions loaded on demand</li>
+<li><a href="guide/v2-add-ons.html#add-a-stop-button">Add a stop button</a>: cancel a long run</li>
+<li><a href="guide/v2-add-ons.html#add-streaming">Add streaming</a>: show the model working live</li>
+<li><a href="guide/v2-add-ons.html#add-context-pruning">Add context pruning</a>: keep history inside the context window</li>
+<li><a href="guide/v2-add-ons.html#add-a-speaker-text-to-speech">Add a speaker, text-to-speech</a>: local Kokoro TTS</li>
+<li><a href="guide/v2-add-ons.html#add-a-mic-speech-to-text">Add a mic, speech-to-text</a>: local faster-whisper</li>
+<li><a href="guide/v2-add-ons.html#add-shortcuts-for-things-the-model-gets-wrong">Add shortcuts for things the model gets wrong</a>: plain code for easy requests</li>
+<li><a href="guide/v2-add-ons.html#add-a-second-model">Add a second model</a>: fast general model plus a stronger one</li>
+<li><a href="guide/v2-add-ons.html#add-tests">Add tests</a>: fake the model, assert on tool calls</li>
+</ul>
+<hr />
+<h2 id="gotchas">Gotchas</h2>
+<p>The short version: set <code>num_ctx</code> explicitly (Ollama's 4096 default silently truncates), cap the loop and every tool result, and try a bigger model before blaming your prompt. Full list: <a href="guide/gotchas.html">gotchas</a>.</p>
+<h2 id="suggested-path">Suggested path</h2>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Do</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Steps 0–4</td>
+<td>CLI agent that reads files</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Steps 5–6</td>
+<td>Approvals + web UI (v1)</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Logger, storage, memory</td>
+<td>It remembers and you can debug it</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Context files, skills, streaming, stop, voice</td>
+<td>Pick what you'll actually use</td>
+</tr>
+</tbody>
+</table>
+<h2 id="where-to-look-in-agent0">Where to look in agent0</h2>
+<table>
+<thead>
+<tr>
+<th>Concern</th>
+<th>File</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Model calls</td>
+<td><code>core/llm.py</code></td>
+</tr>
+<tr>
+<td>System prompt</td>
+<td><code>config/system_prompt.py</code></td>
+</tr>
+<tr>
+<td>The loop</td>
+<td><code>agent.py</code></td>
+</tr>
+<tr>
+<td>Tools</td>
+<td><code>tools/registry.py</code>, <code>tools/*.py</code></td>
+</tr>
+<tr>
+<td>Approvals</td>
+<td><code>core/permission.py</code>, <code>config/settings.py</code></td>
+</tr>
+<tr>
+<td>Logger</td>
+<td><code>core/logger.py</code></td>
+</tr>
+<tr>
+<td>Storage / memory</td>
+<td><code>storage/</code>, <code>core/conversations.py</code></td>
+</tr>
+<tr>
+<td>Context pruning</td>
+<td><code>core/context.py</code></td>
+</tr>
+<tr>
+<td>Web UI</td>
+<td><code>core/ui.py</code>, <code>templates/</code>, <code>static/</code></td>
+</tr>
+<tr>
+<td>Voice</td>
+<td><code>features/audio/</code>, <code>core/speech_to_text.py</code></td>
+</tr>
+</tbody>
+</table>
+
+</main>
+<footer>Generated from the markdown docs in the agent0 repository.</footer>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad: true, theme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default'}});</script>
+</body>
+</html>
