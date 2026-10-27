@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Choose a model for your PC - agent0</title>
+<style>
+:root { --bg: #fdfdfc; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --code: #f3f4f6; --link: #0b62d6; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #16181c; --fg: #e6e8eb; --muted: #9aa4af; --line: #343a42; --code: #22262c; --link: #6aa8ff; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { border-bottom: 1px solid var(--line); padding: 12px 16px; }
+header nav { max-width: 860px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 6px 20px; }
+header a { color: var(--fg); font-weight: 600; text-decoration: none; }
+header a:hover, header a.current { color: var(--link); }
+main { max-width: 860px; margin: 0 auto; padding: 8px 16px 64px; }
+a { color: var(--link); }
+h1, h2, h3 { line-height: 1.25; margin: 1.6em 0 0.5em; }
+h1 { font-size: 2em; } h2 { font-size: 1.45em; border-bottom: 1px solid var(--line); padding-bottom: 0.2em; }
+code { background: var(--code); border-radius: 4px; padding: 0.1em 0.35em; font-size: 0.9em;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; }
+pre { background: var(--code); border-radius: 6px; padding: 12px 14px; overflow-x: auto; }
+pre code { background: none; padding: 0; }
+pre.mermaid { background: none; text-align: center; }
+table { border-collapse: collapse; display: block; overflow-x: auto; margin: 1em 0; }
+th, td { border: 1px solid var(--line); padding: 6px 12px; text-align: left; vertical-align: top; }
+th { background: var(--code); }
+blockquote { margin: 1em 0; padding: 0 1em; color: var(--muted); border-left: 4px solid var(--line); }
+footer { max-width: 860px; margin: 0 auto; padding: 16px; color: var(--muted); font-size: 0.85em;
+  border-top: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<header><nav><a href="../index.html">Build your own agent</a><a href="index.html">All guide pages</a></nav></header>
+<main>
+<h1 id="choose-a-model-for-your-pc">Choose a model for your PC</h1>
+<p>← <a href="../index.html">Back to the guide</a> · <a href="01-install-ollama.html">Step 1</a></p>
+<p>The right model depends on your memory and GPU. Two parts: collect your specs, then give them to any AI assistant with the prompt below.</p>
+<h2 id="1-collect-your-specs">1. Collect your specs</h2>
+<table>
+<thead>
+<tr>
+<th>OS</th>
+<th>Command</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Windows</strong> (PowerShell)</td>
+<td><code>Get-CimInstance Win32_VideoController | Select Name,AdapterRAM</code> and <code>systeminfo | findstr /C:&quot;Total Physical Memory&quot;</code>. For NVIDIA also <code>nvidia-smi</code></td>
+</tr>
+<tr>
+<td><strong>macOS</strong></td>
+<td><code>system_profiler SPHardwareDataType</code> (chip and memory; Apple Silicon shares memory between CPU and GPU)</td>
+</tr>
+<tr>
+<td><strong>Linux</strong></td>
+<td><code>free -h</code>, <code>lscpu | head -20</code>, <code>lspci | grep -i vga</code>; for NVIDIA <code>nvidia-smi</code>, for AMD <code>rocm-smi</code></td>
+</tr>
+</tbody>
+</table>
+<p>You want: <strong>RAM</strong>, <strong>GPU name</strong>, <strong>GPU memory (VRAM)</strong>, and whether it's an Apple Silicon Mac.</p>
+<h2 id="2-ask-for-a-recommendation">2. Ask for a recommendation</h2>
+<p>Paste this into any AI chat, replacing the bracketed parts. Run the <code>ollama list</code> / <code>ollama ps</code> part yourself if you already have Ollama.</p>
+<pre><code class="language-text">I'm building a local AI agent with Ollama. It calls tools (read files, search,
+calendar) in a multi-step loop, so the model MUST support tool calling.
+
+My machine:
+- OS: [Windows / macOS / Linux]
+- RAM: [e.g. 16 GB]
+- GPU: [name, or &quot;none&quot;]
+- VRAM: [e.g. 8 GB, or &quot;unified memory&quot; on Apple Silicon]
+- Free disk space: [e.g. 50 GB]
+
+Recommend 3 models I can pull from the Ollama library, in order:
+1. the safest choice that will run smoothly on my hardware
+2. a smarter one that is still usable (say how slow it will be)
+3. the smallest fallback if the others are too slow
+
+For each give: the exact `ollama pull` tag (with size/quantization), roughly how
+much memory it needs, whether it fits fully in my VRAM or spills to the CPU, and
+the speed I should expect (tokens/second, roughly).
+
+Rules:
+- Only recommend models that list &quot;tools&quot; support on ollama.com/library.
+- If you are not sure a tag exists or supports tools, say so; do not invent tags.
+- A model must fit in memory with room to spare: it also needs space for the
+  context window (I plan to use a 16k-32k context).
+- Tell me how to verify the choice with `ollama pull`, `ollama ps` and a
+  tool-calling test.
+</code></pre>
+<h2 id="3-sanity-check-the-answer">3. Sanity-check the answer</h2>
+<p>AI assistants can be out of date or confidently wrong about model names. Always verify:</p>
+<ul>
+<li><strong>The tag exists and lists &quot;tools&quot;:</strong> open <a href="https://ollama.com/library">ollama.com/library</a>, find the model, check its tags and capabilities.</li>
+<li><strong>It fits:</strong> after <code>ollama run &lt;tag&gt; &quot;hi&quot;</code>, run <code>ollama ps</code>. The <code>PROCESSOR</code> column should say <code>100% GPU</code> for best speed. <code>x% CPU</code> means it is spilling into system memory and will be slower.</li>
+<li><strong>Rule of thumb:</strong> a 4-bit model needs roughly 0.6 GB of memory per billion parameters, plus 1–3 GB for the context window. So 8B ≈ 5–6 GB and 30B ≈ 20 GB or more.</li>
+<li><strong>Too slow or running out of memory?</strong> Go one size down before changing anything else.</li>
+<li><strong>Doesn't call tools?</strong> Try the next size up, or a different model family, before blaming your code.</li>
+</ul>
+
+</main>
+<footer>Generated from the markdown docs in the agent0 repository.</footer>
+</body>
+</html>

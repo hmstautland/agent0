@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How Ollama works - agent0</title>
+<style>
+:root { --bg: #fdfdfc; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --code: #f3f4f6; --link: #0b62d6; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #16181c; --fg: #e6e8eb; --muted: #9aa4af; --line: #343a42; --code: #22262c; --link: #6aa8ff; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { border-bottom: 1px solid var(--line); padding: 12px 16px; }
+header nav { max-width: 860px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 6px 20px; }
+header a { color: var(--fg); font-weight: 600; text-decoration: none; }
+header a:hover, header a.current { color: var(--link); }
+main { max-width: 860px; margin: 0 auto; padding: 8px 16px 64px; }
+a { color: var(--link); }
+h1, h2, h3 { line-height: 1.25; margin: 1.6em 0 0.5em; }
+h1 { font-size: 2em; } h2 { font-size: 1.45em; border-bottom: 1px solid var(--line); padding-bottom: 0.2em; }
+code { background: var(--code); border-radius: 4px; padding: 0.1em 0.35em; font-size: 0.9em;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; }
+pre { background: var(--code); border-radius: 6px; padding: 12px 14px; overflow-x: auto; }
+pre code { background: none; padding: 0; }
+pre.mermaid { background: none; text-align: center; }
+table { border-collapse: collapse; display: block; overflow-x: auto; margin: 1em 0; }
+th, td { border: 1px solid var(--line); padding: 6px 12px; text-align: left; vertical-align: top; }
+th { background: var(--code); }
+blockquote { margin: 1em 0; padding: 0 1em; color: var(--muted); border-left: 4px solid var(--line); }
+footer { max-width: 860px; margin: 0 auto; padding: 16px; color: var(--muted); font-size: 0.85em;
+  border-top: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<header><nav><a href="../index.html">Build your own agent</a><a href="index.html">All guide pages</a></nav></header>
+<main>
+<h1 id="how-ollama-works">How Ollama works</h1>
+<p>← <a href="../index.html">Back to the guide</a> · <a href="01-install-ollama.html">Step 1</a></p>
+<p>Ollama is a small background server that downloads models, loads them into RAM/VRAM and serves them over HTTP. It is to LLMs roughly what Docker is to containers: <code>pull</code> fetches an image, a daemon runs it, and a CLI plus an API talk to the daemon.</p>
+<pre><code>your code / terminal ──HTTP──► ollama server (localhost:11434) ──► model in RAM/GPU
+</code></pre>
+<ul>
+<li>
+<p><strong>It runs as a service.</strong> The installer starts it automatically (a systemd service on Linux, a menu-bar app on macOS/Windows). If it isn't running, start it with <code>ollama serve</code>. You only need one instance.</p>
+</li>
+<li>
+<p><strong>The <code>ollama</code> command is just a client</strong> of that server. <code>ollama run</code>, <code>ollama pull</code>, <code>ollama list</code> and <code>ollama ps</code> all call the same HTTP API your code will use, so anything the CLI can do, your program can do too.</p>
+</li>
+<li>
+<p><strong>Reachable from a standard terminal, yes.</strong> It listens on <code>127.0.0.1:11434</code>, so <code>curl</code> works with no API key and no login:</p>
+<pre><code class="language-bash">curl http://localhost:11434/api/tags      # list installed models
+curl http://localhost:11434/api/chat -d '{
+  &quot;model&quot;: &quot;qwen3:8b&quot;,
+  &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;say hi&quot;}],
+  &quot;stream&quot;: false
+}'
+</code></pre>
+<p>If <code>curl</code> answers, Python will too. This is the first thing to try when something fails. (Windows PowerShell: use <code>curl.exe</code>, since plain <code>curl</code> is an alias for something else.)</p>
+</li>
+<li>
+<p><strong>Local only by default.</strong> It binds to localhost, so other machines can't reach it and nothing leaves your computer. To serve another machine, set <code>OLLAMA_HOST=0.0.0.0</code> on the server. There's no authentication, so only do that on a trusted network.</p>
+</li>
+<li>
+<p><strong>Models load on first use, then stay warm.</strong> The first request after a pause is slow (the weights are loading). Ollama unloads an idle model after about 5 minutes. <code>ollama ps</code> shows what's loaded and whether it's on GPU or CPU.</p>
+</li>
+<li>
+<p><strong>Models are files on disk</strong> (<code>~/.ollama/models</code>, several GB each). Remove one with <code>ollama rm &lt;name&gt;</code>.</p>
+</li>
+<li>
+<p><strong>No GPU?</strong> It still works on CPU, just slower. Use a 3B–8B model.</p>
+</li>
+<li>
+<p><strong>It's stateless.</strong> The server doesn't remember conversations; your code resends the history on every call (<a href="../index.html#step-2-talk-to-the-model">Step 2</a>).</p>
+</li>
+<li>
+<p><strong>Two endpoints exist:</strong> <code>/api/generate</code> (one prompt in, one answer out) and <code>/api/chat</code> (a list of messages, plus tool calling). Agents use <code>/api/chat</code>.</p>
+</li>
+</ul>
+
+</main>
+<footer>Generated from the markdown docs in the agent0 repository.</footer>
+</body>
+</html>

@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diagrams - agent0</title>
+<style>
+:root { --bg: #fdfdfc; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --code: #f3f4f6; --link: #0b62d6; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #16181c; --fg: #e6e8eb; --muted: #9aa4af; --line: #343a42; --code: #22262c; --link: #6aa8ff; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { border-bottom: 1px solid var(--line); padding: 12px 16px; }
+header nav { max-width: 860px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 6px 20px; }
+header a { color: var(--fg); font-weight: 600; text-decoration: none; }
+header a:hover, header a.current { color: var(--link); }
+main { max-width: 860px; margin: 0 auto; padding: 8px 16px 64px; }
+a { color: var(--link); }
+h1, h2, h3 { line-height: 1.25; margin: 1.6em 0 0.5em; }
+h1 { font-size: 2em; } h2 { font-size: 1.45em; border-bottom: 1px solid var(--line); padding-bottom: 0.2em; }
+code { background: var(--code); border-radius: 4px; padding: 0.1em 0.35em; font-size: 0.9em;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; }
+pre { background: var(--code); border-radius: 6px; padding: 12px 14px; overflow-x: auto; }
+pre code { background: none; padding: 0; }
+pre.mermaid { background: none; text-align: center; }
+table { border-collapse: collapse; display: block; overflow-x: auto; margin: 1em 0; }
+th, td { border: 1px solid var(--line); padding: 6px 12px; text-align: left; vertical-align: top; }
+th { background: var(--code); }
+blockquote { margin: 1em 0; padding: 0 1em; color: var(--muted); border-left: 4px solid var(--line); }
+footer { max-width: 860px; margin: 0 auto; padding: 16px; color: var(--muted); font-size: 0.85em;
+  border-top: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<header><nav><a href="../index.html">Build your own agent</a><a href="index.html">All guide pages</a></nav></header>
+<main>
+<h1 id="diagrams">Diagrams</h1>
+<p>← <a href="../index.html">Back to the guide</a></p>
+<p>Both diagrams are <a href="https://mermaid.js.org/">Mermaid</a>, which GitHub, GitLab and most editors render directly. The first shows what happens when you talk to the agent; the second shows the parts and which one talks to which. They describe agent0, which is v1 plus the v2 add-ons. Parts marked <em>(v2)</em> can be left out of your first version.</p>
+<h2 id="1-interaction-flow-what-happens-to-one-message">1. Interaction flow: what happens to one message</h2>
+<pre class="mermaid">flowchart TD
+    U([You type or speak a message]) --&gt; UI[Web UI or CLI]
+    UI --&gt; SC{&quot;Shortcut match?&lt;br/&gt;calendar, play audio&lt;br/&gt;notes too, web UI only&lt;br/&gt;(v2)&quot;}
+    SC -- yes --&gt; SCR[Plain code handles it&lt;br/&gt;no model involved]
+    SC -- no --&gt; RT{&quot;Obviously needs tools?&lt;br/&gt;(file names, code)&quot;}
+    RT -- no --&gt; LF[&quot;Local-first call:&lt;br/&gt;can the model answer directly?&lt;br/&gt;(v2)&quot;]
+    LF -- &quot;yes&quot; --&gt; ANS
+    LF -- &quot;needs tools&quot; --&gt; LOOP
+    RT -- yes --&gt; LOOP
+
+    subgraph LOOP [The agent loop, max N steps]
+        direction TB
+        M[&quot;Send system prompt + history + question&lt;br/&gt;to the model (Ollama)&quot;] --&gt; TC{Model asks&lt;br/&gt;for a tool?}
+        TC -- yes --&gt; PM{&quot;Permission check&lt;br/&gt;low risk, or approved before?&quot;}
+        PM -- yes --&gt; RUN[Run the tool function]
+        PM -- no --&gt; PARK[&quot;Pause and show an approval card&lt;br/&gt;(run is parked)&quot;]
+        PARK -- &quot;you approve&quot; --&gt; RUN
+        PARK -- &quot;you deny&quot; --&gt; DEN[&quot;Tool result = ERROR: user denied&quot;]
+        RUN --&gt; RES[&quot;Add the result to the messages&lt;br/&gt;(capped, old results pruned)&quot;]
+        DEN --&gt; RES
+        RES --&gt; M
+    end
+
+    TC -- &quot;no: plain text&quot; --&gt; ANS[Final answer]
+    SCR --&gt; ANS
+    ANS --&gt; SAVE[&quot;Save the turn to local storage&lt;br/&gt;and write log lines (v2)&quot;]
+    SAVE --&gt; OUT([Answer shown in the UI, optionally read aloud])
+
+    STOP([Stop button]) -. &quot;cancels the model call&quot; .-&gt; M
+</pre>
+<p>Reading it:</p>
+<ul>
+<li><strong>The loop is the agent.</strong> Everything above it is optional routing to save time or improve reliability; everything below it is storage and output.</li>
+<li><strong>Every tool call passes the permission check</strong> before the function runs. A denial goes back to the model as text, so it can explain what it couldn't do instead of crashing.</li>
+<li><strong>A parked run is resumed, not restarted.</strong> The approval card only sends the run's id and your decision; the loop continues from where it paused.</li>
+<li><strong>The first version (v1) is just:</strong> message → loop → permission check → tools → answer. Add the other boxes one add-on at a time.</li>
+</ul>
+<h2 id="2-architecture-the-parts">2. Architecture: the parts</h2>
+<pre class="mermaid">flowchart LR
+    subgraph IN [Input]
+        WEB[Web UI&lt;br/&gt;FastAPI + HTML/JS]
+        CLI[CLI]
+        MIC[&quot;Mic&lt;br/&gt;faster-whisper (v2)&quot;]
+    end
+
+    subgraph CORE [Agent core]
+        AG[agent.py&lt;br/&gt;the loop]
+        SP[System prompt&lt;br/&gt;+ skills index]
+        PERM[Permissions&lt;br/&gt;risk levels + RULES]
+        CTX[&quot;Context pruning&lt;br/&gt;(v2)&quot;]
+    end
+
+    subgraph TOOLS [Tools: registry.py]
+        FT[Files&lt;br/&gt;read, search, edit]
+        WT[Web search]
+        CT[Calendar, notes]
+        SK[load_skill]
+        SH[search_history]
+    end
+
+    subgraph DATA [Local storage]
+        DB[(&quot;SQLite&lt;br/&gt;conversations + full-text search&quot;)]
+        FS[Notes, audio, backups]
+        LOG[logs.txt&lt;br/&gt;JSON lines]
+        SKF[skills/*.md]
+    end
+
+    OLL[[&quot;Ollama server&lt;br/&gt;localhost:11434&quot;]]
+    MODEL[(Local model&lt;br/&gt;in RAM / GPU)]
+    TTS[&quot;Speaker&lt;br/&gt;Kokoro TTS (v2)&quot;]
+
+    WEB --&gt; AG
+    CLI --&gt; AG
+    MIC --&gt; WEB
+    AG --&gt; SP
+    AG --&gt; CTX
+    AG &lt;--&gt; OLL
+    OLL --- MODEL
+    AG --&gt; PERM
+    PERM --&gt; TOOLS
+    FT --&gt; FS
+    CT --&gt; FS
+    SH --&gt; DB
+    SK --&gt; SKF
+    WT -. &quot;only part that leaves the machine&quot; .-&gt; NET((Internet))
+    AG --&gt; DB
+    AG --&gt; LOG
+    WEB --&gt; TTS
+</pre>
+<p>Reading it:</p>
+<ul>
+<li><strong>Everything runs on your machine.</strong> The only arrow that leaves it is web search, which is why those tools ask for approval once per session.</li>
+<li><strong><code>agent.py</code> is the hub.</strong> It builds the prompt, talks to Ollama, passes each tool call through permissions, and records the result.</li>
+<li><strong>Tools are plain functions</strong> declared in one registry. Adding a capability means adding an entry there; nothing else in the core changes.</li>
+<li><strong>Ollama is a separate process.</strong> Your code only knows its HTTP address, so you can swap the model, or move Ollama to another machine, by changing a URL or a model name.</li>
+<li><strong>Voice is UI, not agent.</strong> The mic and speaker sit beside the web UI and bypass the loop; the agent only ever sees text.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Box</th>
+<th>agent0 file</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Web UI, CLI</td>
+<td><code>core/ui.py</code>, <code>templates/</code>, <code>static/</code>, <code>agent.py</code> (<code>python -m agent</code>)</td>
+</tr>
+<tr>
+<td>Agent loop</td>
+<td><code>agent.py</code></td>
+</tr>
+<tr>
+<td>System prompt, skills</td>
+<td><code>config/system_prompt.py</code>, <code>tools/skills.py</code>, <code>skills/</code></td>
+</tr>
+<tr>
+<td>Permissions</td>
+<td><code>core/permission.py</code>, <code>core/runs.py</code>, <code>config/settings.py</code></td>
+</tr>
+<tr>
+<td>Context pruning</td>
+<td><code>core/context.py</code></td>
+</tr>
+<tr>
+<td>Tools</td>
+<td><code>tools/registry.py</code>, <code>tools/*.py</code>, <code>features/</code></td>
+</tr>
+<tr>
+<td>Model client</td>
+<td><code>core/llm.py</code></td>
+</tr>
+<tr>
+<td>Storage, history</td>
+<td><code>storage/</code>, <code>core/conversations.py</code></td>
+</tr>
+<tr>
+<td>Logger</td>
+<td><code>core/logger.py</code></td>
+</tr>
+<tr>
+<td>Mic, speaker</td>
+<td><code>core/speech_to_text.py</code>, <code>features/audio/</code></td>
+</tr>
+</tbody>
+</table>
+
+</main>
+<footer>Generated from the markdown docs in the agent0 repository.</footer>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad: true, theme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default'}});</script>
+</body>
+</html>
