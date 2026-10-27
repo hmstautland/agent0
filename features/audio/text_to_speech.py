@@ -4,6 +4,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -138,8 +139,8 @@ def _build_filename_stem(title: str = None) -> str:
 
     Falls back to "tts_<date>_<time>" (minute precision) when no title is
     given, or it sanitizes down to nothing. Either way, a numeric suffix is
-    appended if the name is already taken, so two generations in the same
-    minute never overwrite each other.
+    appended if the name is already taken in *any* output format, so a new
+    .wav never shares a name with an existing .mp3 (and vice versa).
     """
     title = (title or "").strip()
     stem = _UNSAFE_FILENAME_CHARS_RE.sub("_", title).strip(" ._") if title else ""
@@ -148,11 +149,33 @@ def _build_filename_stem(title: str = None) -> str:
 
     candidate = stem
     counter = 2
-    while (AUDIO_DIR / f"{candidate}.wav").exists():
+    while any((AUDIO_DIR / f"{candidate}.{ext}").exists() for ext in OUTPUT_FORMATS):
         candidate = f"{stem}_{counter}"
         counter += 1
 
     return candidate
+
+
+_reserve_lock = threading.Lock()
+
+
+def _reserve_output_path(title: str, output_format: str) -> Path:
+    """Pick a free name and claim it by creating the file exclusively.
+
+    The exclusive create closes the gap between "name is free" and "file is
+    written", so two concurrent generations can't both pick the same name.
+    """
+    # "Free in every format" is checked across several files, so choosing the
+    # stem and claiming it happen under one lock; the exclusive create still
+    # guards against another process.
+    with _reserve_lock:
+        while True:
+            path = AUDIO_DIR / f"{_build_filename_stem(title)}.{output_format}"
+            try:
+                path.open("x").close()
+                return path
+            except FileExistsError:
+                continue  # lost the race for this name - pick the next free one
 
 
 _pipelines = {}  # lang_code -> KPipeline, lazily created and reused
@@ -245,10 +268,10 @@ def _write_wav(samples: np.ndarray, path: Path) -> None:
     sf.write(str(path), samples, SAMPLE_RATE, subtype="PCM_16")
 
 
-def _encode_flac(wav_path: Path) -> Path:
+def _encode_flac(wav_path: Path, out_path: Path = None) -> Path:
     import soundfile as sf
 
-    out_path = wav_path.with_suffix(".flac")
+    out_path = out_path or wav_path.with_suffix(".flac")
     data, sr = sf.read(str(wav_path))
     sf.write(str(out_path), data, sr, format="FLAC")
     return out_path
@@ -278,19 +301,28 @@ def _run_ffmpeg(input_path: Path, out_path: Path, output_format: str) -> None:
         raise RuntimeError(f"{output_format} encoding failed: {e.stderr.decode(errors='replace')}") from e
 
 
-def _encode_with_ffmpeg(wav_path: Path, output_format: str) -> Path:
-    out_path = wav_path.with_suffix(f".{output_format}")
-    _run_ffmpeg(wav_path, out_path, output_format)
-    return out_path
+def _save_output(samples: np.ndarray, title: str, output_format: str) -> dict:
+    """Write samples to a new file in AUDIO_DIR in the requested format.
 
-
-def _finalize_output(wav_path: Path, output_format: str) -> dict:
-    if output_format == "wav":
-        out_path = wav_path
-    elif output_format == "flac":
-        out_path = _encode_flac(wav_path)
-    else:
-        out_path = _encode_with_ffmpeg(wav_path, output_format)
+    Non-WAV formats are encoded from an intermediate WAV in a private temp
+    dir, so nothing but the final file ever lands in AUDIO_DIR. On failure
+    the reserved (possibly half-written) output file is removed.
+    """
+    out_path = _reserve_output_path(title, output_format)
+    try:
+        if output_format == "wav":
+            _write_wav(samples, out_path)
+        else:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                wav_path = Path(tmp_dir) / "speech.wav"
+                _write_wav(samples, wav_path)
+                if output_format == "flac":
+                    _encode_flac(wav_path, out_path)
+                else:
+                    _run_ffmpeg(wav_path, out_path, output_format)
+    except BaseException:
+        out_path.unlink(missing_ok=True)
+        raise
 
     return {
         "path": str(out_path),
@@ -333,10 +365,7 @@ def synthesize(
             "Kokoro TTS is not installed. Install it with `pip install kokoro soundfile` (see README)."
         ) from e
 
-    wav_path = AUDIO_DIR / f"{_build_filename_stem(title)}.wav"
-    _write_wav(samples, wav_path)
-
-    return _finalize_output(wav_path, output_format)
+    return _save_output(samples, title, output_format)
 
 
 def parse_dialogue(text: str) -> list[tuple[str, str]]:
@@ -420,10 +449,7 @@ def synthesize_dialogue(
 
     samples = np.concatenate(segments)
 
-    wav_path = AUDIO_DIR / f"{_build_filename_stem(title)}.wav"
-    _write_wav(samples, wav_path)
-
-    return _finalize_output(wav_path, output_format)
+    return _save_output(samples, title, output_format)
 
 
 def _save_upload_bounded(upload_file_obj, dest_path: Path, max_bytes: int) -> None:

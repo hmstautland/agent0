@@ -30,7 +30,11 @@ def _list_audio_files():
     if not AUDIO_DIR.exists():
         return []
 
-    files = [p for p in AUDIO_DIR.iterdir() if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS]
+    # An empty file is a name reserved by a generation still in progress (tts), not playable audio
+    files = [
+        p for p in AUDIO_DIR.iterdir()
+        if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS and p.stat().st_size > 0
+    ]
     files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     return files
 

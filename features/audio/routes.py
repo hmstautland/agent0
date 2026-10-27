@@ -1,6 +1,7 @@
 """HTTP surface of the audio feature: text-to-speech generation, document text
 extraction, file conversion, and the saved-file browser/player. Static assets
-(features/audio/static) are served at /static/audio."""
+(features/audio/static) are served at /static/audio; the saved audio itself
+at /audio/<file>, behind login."""
 
 import os
 from pathlib import Path
@@ -13,6 +14,7 @@ from starlette.concurrency import run_in_threadpool
 from core.auth import is_logged_in
 from features.audio.player import find_audio_files
 from features.audio.text_to_speech import (
+    AUDIO_DIR,
     DEFAULT_DIALOGUE_VOICE_A,
     DEFAULT_DIALOGUE_VOICE_B,
     DEFAULT_OUTPUT_FORMAT,
@@ -35,6 +37,18 @@ audio_router = APIRouter(dependencies=[Depends(is_logged_in)])
 
 def audio_static_files():
     return StaticFiles(directory=str(STATIC_DIR))
+
+
+# Saved/generated audio holds the user's own content (converted documents,
+# dictation), so it is served through audio_router's login check instead of a
+# public mount. StaticFiles still does the serving: it rejects paths outside
+# AUDIO_DIR and handles range requests, so <audio> can seek.
+_saved_audio = StaticFiles(directory=str(AUDIO_DIR))
+
+
+@audio_router.api_route("/audio/{path:path}", methods=["GET", "HEAD"])
+async def saved_audio(path: str, request: Request):
+    return await _saved_audio.get_response(path, request.scope)
 
 
 @audio_router.get("/tts/voices")

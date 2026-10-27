@@ -1,0 +1,16 @@
+# systemd user service for the web UI, started on demand: the first request to
+# 127.0.0.1:8000 (agent0-ui-proxy.socket, also what `tailscale serve` points at)
+# starts agent0-ui-proxy.service, which pulls this in. When the proxy exits
+# after its idle time, StopWhenUnneeded stops this too.
+# Install: see README.md "Remote access over Tailscale".
+[Unit]
+Description=Agent 0 web UI
+StopWhenUnneeded=yes
+
+[Service]
+WorkingDirectory=%h/Desktop/Source/agent0
+ExecStart=%h/Desktop/Source/agent0/venv/bin/uvicorn core.ui:app --host 127.0.0.1 --port 8001
+# Not "started" until it answers, so the proxy never forwards to a closed port.
+ExecStartPost=/usr/bin/bash -c 'until curl -s -o /dev/null http://127.0.0.1:8001/login; do sleep 0.5; done'
+TimeoutStartSec=60
+Restart=on-failure

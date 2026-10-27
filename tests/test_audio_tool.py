@@ -188,3 +188,11 @@ def test_describe_play_result_for_each_status():
         {"status": "choose", "candidates": [{}, {}]}
     )
     assert audio_mod.describe_play_result({"status": "error", "message": "nope"}) == "nope"
+
+
+def test_a_zero_byte_file_is_a_reservation_in_progress_and_is_not_listed(monkeypatch, tmp_path):
+    monkeypatch.setattr(audio_mod, "AUDIO_DIR", tmp_path)
+    (tmp_path / "done.wav").write_bytes(b"x")
+    (tmp_path / "being-made.wav").write_bytes(b"")
+
+    assert [f.name for f in audio_mod.find_audio_files()] == ["done.wav"]

@@ -2,36 +2,36 @@
 from config.settings import RULES
 
 
-class PermissionRequired(Exception):
-    def __init__(self, action, args, risk, reason=None):
-        super().__init__(f"Permission required for {action}")
-        self.action = action
-        self.tool_args = args
-        self.risk = risk
-        self.reason = reason
+def needs_approval(action, tool, granted=()):
+    """Whether this tool call must be approved by the user before it runs.
 
-
-def request_permission(action, args, risk, decisions=None, reason=None):
+    - RULES "ask" always asks.
+    - External tools (tool["external"]) send data off the machine: they ask
+      until the user has approved that tool once this session (`granted`).
+    - RULES "auto" skips the prompt for any other tool.
+    - Otherwise only low-risk tools run without asking.
+    """
     rule = RULES.get(action)
 
+    if rule == "ask":
+        return True
+
+    if tool.get("external"):
+        return action not in granted
+
     if rule == "auto":
-        return True  # auto-allow, per configured rule
+        return False
 
-    # No explicit rule for this action - fall back to risk level
-    if rule is None and (risk == "low" or risk == "auto"):
-        return True  # auto-allow
+    return tool.get("risk") != "low"
 
-    # If a decisions map is provided (web flow), use it or raise a PermissionRequired
-    if decisions is not None:
-        if action in decisions:
-            return bool(decisions[action])
-        # signal to caller that UI approval is required
-        raise PermissionRequired(action, args, risk, reason=reason)
 
-    # Fallback to CLI prompt
+def ask_cli(action, args, risk, reason=None):
+    """CLI approval prompt. Returns True if the user approved."""
     print("\n--- PERMISSION REQUEST ---")
     print(f"Action: {action}")
     print(f"Risk: {risk}")
+    if reason:
+        print(f"Reason: {reason}")
     print(f"Arguments: {args}")
 
     user_input = input("Approve? (y/n): ").lower()
