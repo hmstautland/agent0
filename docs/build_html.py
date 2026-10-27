@@ -1,8 +1,10 @@
-"""Build docs/html/: the README and everything under docs/ as plain HTML pages.
+"""Build docs/html/: the "Build your own agent" guide (docs/BUILD_YOUR_OWN_AGENT.md
+and docs/guide/) as plain HTML pages.
 
 The markdown stays the source; this folder is generated (and gitignored), so
 rebuild after editing a doc. Open docs/html/index.html in a browser, or zip
-the folder to share it - it needs no server. Pages with mermaid diagrams load
+the folder to share it - it needs no server. Each page carries its own
+styles, so one page also works when sent on its own. Pages with mermaid diagrams load
 mermaid from a CDN; offline they show the diagram source instead.
 
     python docs/build_html.py
@@ -22,11 +24,12 @@ OUT = DOCS / "html"
 
 MERMAID_JS = "https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"
 
+# The start page, published as index.html
+START = "docs/BUILD_YOUR_OWN_AGENT.md"
+
 NAV = [
-    ("Home", "README.md"),
-    ("Features", "docs/features/README.md"),
-    ("Build your own agent", "docs/BUILD_YOUR_OWN_AGENT.md"),
-    ("Decisions", "docs/DECISIONS.md"),
+    ("Build your own agent", START),
+    ("All guide pages", "docs/guide/README.md"),
 ]
 
 STYLE = """\
@@ -61,11 +64,13 @@ footer { max-width: 860px; margin: 0 auto; padding: 16px; color: var(--muted); f
 
 def source_files():
     """Every doc to publish, as repo-relative paths."""
-    return ["README.md"] + [path.relative_to(ROOT).as_posix() for path in sorted(DOCS.rglob("*.md"))]
+    return [START] + [path.relative_to(ROOT).as_posix() for path in sorted((DOCS / "guide").glob("*.md"))]
 
 
 def output_path(source):
-    """Where a doc lands inside docs/html/: README.md files become index.html."""
+    """Where a doc lands inside docs/html/: the start page and README.md files become index.html."""
+    if source == START:
+        return "index.html"
     rel = Path(source)
     if rel.parts[0] == "docs":
         rel = rel.relative_to("docs")
@@ -160,7 +165,8 @@ def page(title, body, out, has_mermaid):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{html.escape(title)} - agent0</title>
-<link rel="stylesheet" href="{rel_href(out, "style.css")}">
+<style>
+{STYLE}</style>
 </head>
 <body>
 <header><nav>{nav}</nav></header>
@@ -195,8 +201,8 @@ def build(out_dir=OUT):
         if readme in pages:
             dir_indexes[folder] = output_path(readme)
         elif folder == "docs":
-            # docs/ itself lands at the root, where the top-level README already is
-            dir_indexes[folder] = output_path("README.md")
+            # docs/ itself lands at the root, on the start page
+            dir_indexes[folder] = output_path(START)
         else:
             index_src = f"{folder}/README.md"
             pages[index_src] = directory_index(folder, sorted(members), titles)
@@ -206,7 +212,6 @@ def build(out_dir=OUT):
     if out_dir.exists():
         shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True)
-    (out_dir / "style.css").write_text(STYLE, encoding="utf-8")
 
     dropped = []
     for src, text in pages.items():

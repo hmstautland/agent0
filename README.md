@@ -23,7 +23,7 @@ Each feature has its own page in [docs/features/](docs/features/):
 
 Other docs: [CLAUDE.md](CLAUDE.md) (architecture), [docs/DECISIONS.md](docs/DECISIONS.md) (decision log), [docs/BUILD_YOUR_OWN_AGENT.md](docs/BUILD_YOUR_OWN_AGENT.md) (step-by-step guide).
 
-To read or share the docs as plain HTML, run `python docs/build_html.py` and open `docs/html/index.html`. The folder works without a server, so you can zip it and send it.
+To read or share the "Build your own agent" guide as plain HTML, run `python docs/build_html.py` and open `docs/html/index.html`. The folder works without a server, so you can zip it and send it.
 
 ## Layout
 

@@ -24,14 +24,17 @@ def test_every_internal_link_and_anchor_in_the_html_docs_resolves(tmp_path):
                 broken.append(f"{path.name}: {href} (no such heading)")
 
     assert (tmp_path / "index.html").exists()
-    assert (tmp_path / "features" / "index.html").exists()
+    assert (tmp_path / "guide" / "index.html").exists()
     assert broken == []
 
 
-def test_md_links_become_html_and_unpublished_files_become_text(tmp_path):
-    _, dropped = build_html.build(tmp_path)
+def test_only_the_build_your_own_agent_guide_is_published(tmp_path):
+    built, dropped = build_html.build(tmp_path)
     home = (tmp_path / "index.html").read_text(encoding="utf-8")
 
-    assert 'href="features/agent-loop.html"' in home
+    assert set(built) - {"docs/guide/README.md"} == {"docs/BUILD_YOUR_OWN_AGENT.md", *(f"docs/guide/{p.name}" for p in Path("docs/guide").glob("*.md"))}
+    assert "Build your own local agent" in home
+    assert 'href="guide/00-prerequisites.html"' in home
     assert ".md\"" not in home
-    assert "README.md: CLAUDE.md" in dropped
+    assert "<style>" in home and not (tmp_path / "style.css").exists()
+    assert dropped == []
