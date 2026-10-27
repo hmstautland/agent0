@@ -10,10 +10,27 @@ from datetime import datetime
 from pathlib import Path
 
 DB_PATH = os.getenv("AGENT0_DB", "local_storage/agent0.db")
+_SAFE_DB_ROOT = Path("local_storage").resolve()
+_DEFAULT_DB_PATH = _SAFE_DB_ROOT / "agent0.db"
 
 SCHEMA_FILE = Path(__file__).with_name("schema.sql")
 # Bump when schema.sql changes - databases below it get schema.sql applied again
 SCHEMA_VERSION = 2
+
+
+def _validated_db_path():
+    """Return a normalized DB path constrained to the local_storage directory."""
+    candidate = Path(DB_PATH).expanduser()
+    if not candidate.is_absolute():
+        candidate = Path.cwd() / candidate
+    resolved = candidate.resolve()
+    try:
+        resolved.relative_to(_SAFE_DB_ROOT)
+    except ValueError as exc:
+        raise ValueError(
+            f"AGENT0_DB must stay within '{_SAFE_DB_ROOT}', got '{DB_PATH}'"
+        ) from exc
+    return resolved
 
 
 def now():
@@ -35,8 +52,9 @@ def _migrate(conn):
 @contextmanager
 def connect():
     """An open connection with the schema applied; commits on success, rolls back on error."""
-    os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    db_path = _validated_db_path()
+    os.makedirs(db_path.parent, exist_ok=True)
+    conn = sqlite3.connect(str(db_path))
     try:
         conn.row_factory = sqlite3.Row
         _migrate(conn)
