@@ -194,7 +194,7 @@ def ndjson_response(events, request_id=None, owner=None):
                 yield serialize_stream_event(event) + "\n"
         except Exception as e:
             log_event({"type": "stream_error", "error": repr(e)})
-            yield serialize_stream_event({"event": "error", "message": f"Something went wrong: {e}"}) + "\n"
+            yield serialize_stream_event({"event": "error", "message": "Something went wrong. Please try again later."}) + "\n"
 
     return StreamingResponse(body(), media_type="application/x-ndjson")
 
