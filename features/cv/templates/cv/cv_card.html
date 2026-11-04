@@ -1,0 +1,45 @@
+<link rel="stylesheet" href="/static/cv/cv.css" />
+<section id="cv-card" class="response-card cv-card hidden" aria-label="CV and cover letter builder">
+  <div class="cv-header">
+    <h3>CV and cover letter</h3>
+    <button type="button" class="icon-btn cv-close-btn" onclick="toggleCvCard()" aria-label="Close CV builder">×</button>
+  </div>
+
+  <div class="cv-field">
+    <div class="cv-label-row">
+      <label for="cv-master-text">Master CV (paste it, or choose a .txt/.md/.docx file; leave empty to reuse the last one)</label>
+      <button type="button" class="cv-browse-btn" onclick="document.getElementById('cv-master-file').click()">Browse…</button>
+    </div>
+    <textarea id="cv-master-text" class="cv-textarea" rows="5" placeholder="Paste your full CV..."></textarea>
+    <input type="file" id="cv-master-file" accept=".txt,.md,.docx" class="hidden" />
+    <span id="cv-master-file-name" class="cv-file-name hidden"></span>
+  </div>
+
+  <div class="cv-field">
+    <div class="cv-label-row">
+      <label for="cv-role-text">Role description (paste the job ad, or choose a .txt/.md/.docx file)</label>
+      <button type="button" class="cv-browse-btn" onclick="document.getElementById('cv-role-file').click()">Browse…</button>
+    </div>
+    <textarea id="cv-role-text" class="cv-textarea" rows="5" placeholder="Paste the job ad..."></textarea>
+    <input type="file" id="cv-role-file" accept=".txt,.md,.docx" class="hidden" />
+    <span id="cv-role-file-name" class="cv-file-name hidden"></span>
+  </div>
+
+  <div class="cv-field">
+    <label for="cv-company">Company (optional)</label>
+    <input type="text" id="cv-company" class="cv-input" placeholder="Used in the file names and the letter" />
+  </div>
+
+  <button type="button" id="cv-generate-btn" class="cv-generate-btn" onclick="tailorCv()">Tailor CV and cover letter</button>
+
+  <div id="cv-error" class="cv-error hidden" aria-live="polite"></div>
+
+  <div id="cv-result" class="cv-result hidden">
+    <div class="cv-downloads">
+      <a id="cv-download-cv" class="cv-download" href="#">Download CV (.docx)</a>
+      <a id="cv-download-letter" class="cv-download" href="#">Download cover letter (.docx)</a>
+    </div>
+    <pre id="cv-preview-cv"></pre>
+    <pre id="cv-preview-letter"></pre>
+  </div>
+</section>

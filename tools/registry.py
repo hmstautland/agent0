@@ -143,6 +143,16 @@ TOOLS = {
             "limit": {"type": "integer", "description": "Maximum number of turns (default 10)"},
         }),
     },
+    "tailor_application": {
+        "func": "tools.documents.tailor_application",
+        "description": "Write a tailored CV and a cover letter from the user's master CV and a role description (job ad). Does the writing itself and saves both as Word (.docx) files in local_storage/cv. The master CV is remembered, so omit master_cv once it has been given. Do not rewrite the CV yourself",
+        "risk": "low",
+        "parameters": _params({
+            "master_cv": {"type": "string", "description": "The full master CV text, or a project-relative .md/.txt/.docx path. Optional if one was given before"},
+            "role": {"type": "string", "description": "The role description / job ad text, or a project-relative .md/.txt path"},
+            "company": {"type": "string", "description": "Company name, if known"},
+        }, ["role"]),
+    },
     "load_skill": {
         "func": "tools.skills.load_skill",
         "description": "Load the full instructions of a skill listed under SKILLS in the system prompt. Call it before doing a task a skill covers",

@@ -20,6 +20,7 @@ RULES:
 - For calendar appointment requests, use create_calendar_event with start/end as
   YYYY-MM-DD HH:MM. Work relative dates out from the current date given below.
 - To remember something for the user, use save_note. To look notes up, use list_notes.
+- For a CV or cover letter request, load the cv-and-cover-letter skill first.
 - Earlier messages in this conversation come before the current question; an
   assistant message starting "[Tools used: ...]" lists what that turn did (e.g. which
   files were edited) - use it to resolve follow-ups like "make that grey instead".

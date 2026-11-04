@@ -74,6 +74,8 @@
           {% include "components/permission_card.html" %}
 
           {% include "audio/tts_dashboard.html" %}
+
+          {% include "cv/cv_card.html" %}
         </div>
       </main>
 
@@ -105,6 +107,7 @@
             🎤
           </button>
           {% include "audio/tts_button.html" %}
+          {% include "cv/cv_button.html" %}
         </form>
       </footer>
     </div>
@@ -112,6 +115,7 @@
     <script src="/static/speech.js"></script>
     {% include "audio/scripts.html" %}
     {% include "calendar/scripts.html" %}
+    {% include "cv/scripts.html" %}
     <script src="/static/chat.js"></script>
   </body>
 </html>

@@ -14,6 +14,7 @@ from core.auth import logout_router, public_router
 from core.speech_routes import speech_router
 from features.audio.routes import audio_router, audio_static_files
 from features.calendar.routes import calendar_router, calendar_static_files
+from features.cv.routes import cv_router, cv_static_files
 
 MIN_SESSION_SECRET_LENGTH = 32
 
@@ -39,6 +40,7 @@ app = FastAPI()
 # in registration order, so the more specific prefix has to come first or
 # /static would shadow every /static/<feature>/* request.
 app.mount("/static/calendar", calendar_static_files(), name="calendar_static")
+app.mount("/static/cv", cv_static_files(), name="cv_static")
 app.mount("/static/audio", audio_static_files(), name="audio_static")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/favicon", StaticFiles(directory="favicon"), name="favicon")
@@ -69,6 +71,7 @@ app.include_router(agent_router)
 app.include_router(speech_router)
 app.include_router(audio_router)
 app.include_router(calendar_router)
+app.include_router(cv_router)
 app.include_router(logout_router)
 app.include_router(public_router)
 
