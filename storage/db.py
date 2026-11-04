@@ -38,7 +38,7 @@ SCHEMA_VERSION = 2
 
 def _validated_db_path():
     """Return a normalized DB path constrained to the local_storage directory."""
-    return DB_PATH
+    return Path(DB_PATH)
 
 
 def now():

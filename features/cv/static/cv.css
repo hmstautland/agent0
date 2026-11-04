@@ -1,0 +1,124 @@
+.cv-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cv-header,
+.cv-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cv-close-btn {
+  font-size: 26px;
+  padding: 0 8px;
+  line-height: 1;
+}
+
+.cv-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cv-field label {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.cv-input,
+.cv-textarea {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: white;
+  font-family: inherit;
+  font-size: 15px;
+}
+
+.cv-input {
+  border-radius: 20px;
+  padding: 10px 14px;
+}
+
+.cv-textarea {
+  border-radius: 14px;
+  padding: 12px;
+  resize: vertical;
+  min-height: 90px;
+}
+
+.cv-input::placeholder,
+.cv-textarea::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.cv-textarea:disabled {
+  opacity: 0.6;
+}
+
+.cv-browse-btn {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 14px;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 10px;
+  transition: 0.2s;
+}
+
+.cv-browse-btn:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+  color: white;
+}
+
+.cv-file-name {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.cv-generate-btn {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 20px;
+  color: white;
+  cursor: pointer;
+  font-size: 15px;
+  padding: 10px 16px;
+}
+
+.cv-generate-btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.cv-error {
+  border: 1px solid rgba(255, 0, 0, 0.3);
+  border-radius: 14px;
+  color: #ff8a8a;
+  font-size: 14px;
+  padding: 10px 14px;
+}
+
+.cv-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cv-downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.cv-download {
+  color: white;
+  font-size: 14px;
+}

@@ -91,6 +91,12 @@ TEXT_FILE_TASK_RE = re.compile(
     re.I,
 )
 
+# CV / cover letter requests always need the document tools (see skills/cv-and-cover-letter.md)
+DOCUMENT_TASK_RE = re.compile(
+    r"\b(build|make|create|write|draft|prepare|update|tailor|improve)\b[^.?!\n]{0,40}?\b(cv|resume|r[eé]sum[eé]|cover letter|application letter)\b",
+    re.I,
+)
+
 # Questions about the code itself that name no file: a constant or function
 # ("MAX_STEPS", "run_agent", "tool_route()") or "where is X defined/used".
 # Case-sensitive on purpose - the identifier shapes are what is being matched.
@@ -117,7 +123,7 @@ def tool_route(user_input):
         return None
     if CODE_TASK_RE.search(user_input) or CODE_QUESTION_RE.search(user_input):
         return OLLAMA_CODE_MODEL
-    if TEXT_FILE_TASK_RE.search(user_input):
+    if TEXT_FILE_TASK_RE.search(user_input) or DOCUMENT_TASK_RE.search(user_input):
         return OLLAMA_MODEL
     return None
 

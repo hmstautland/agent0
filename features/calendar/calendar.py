@@ -21,6 +21,7 @@ CREATE_TIME_RE = re.compile(
 
 TITLE_KEYWORDS = ["meeting", "event", "appointment", "call", "sync", "reminder"]
 
+MAX_DATE_TEXT = 60
 WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
 # Date-only formats for the "on <date>" part of a create command. Formats
@@ -142,10 +143,11 @@ def _resolve_times(day, start_token, end_token):
 
 
 def _normalize_date_text(text):
-    text = re.sub(r"(\d+)(st|nd|rd|th)\b", r"\1", text, flags=re.I)
-    text = re.sub(r"\b(of|the)\b", " ", text, flags=re.I)
-    text = text.replace(",", " ")
-    return re.sub(r"\s+", " ", text).strip()
+    # A date is a few words: cap the input so the patterns below stay linear
+    text = text[:MAX_DATE_TEXT]
+    text = re.sub(r"\b(\d{1,2})(st|nd|rd|th)\b", r"\1", text, flags=re.I)
+    words = text.replace(",", " ").split()
+    return " ".join(w for w in words if w.lower() not in ("of", "the"))
 
 
 def _parse_date_text(text, today):
