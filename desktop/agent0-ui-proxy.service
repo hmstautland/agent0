@@ -1,0 +1,9 @@
+# Forwards the socket's connections to uvicorn and exits after 30 minutes
+# without any, which also stops agent0-ui.service.
+[Unit]
+Description=Agent 0 web UI proxy
+Requires=agent0-ui.service
+After=agent0-ui.service
+
+[Service]
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd --exit-idle-time=30min 127.0.0.1:8001

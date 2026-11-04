@@ -2,7 +2,7 @@
 <section
   id="calendar-card"
   class="response-card calendar-card hidden"
-  {% if calendar_month %}data-initial-year="{{ calendar_month.year }}" data-initial-month="{{ calendar_month.month }}"{% endif %}
+  {% if calendar_month %}data-initial-year="{{ calendar_month.year }}" data-initial-month="{{ calendar_month.month }}"{% if calendar_month.day %} data-initial-day="{{ calendar_month.day }}"{% endif %}{% endif %}
 >
   <div class="calendar-card-header">
     <button

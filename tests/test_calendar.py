@@ -1,4 +1,7 @@
-from datetime import datetime
+import json
+from datetime import date, datetime, timedelta
+
+import pytest
 
 import core.auth as auth_mod
 import core.ui as ui_mod
@@ -134,3 +137,109 @@ def test_ask_stream_calendar_shortcut_emits_show_calendar_event(monkeypatch, tmp
     event = response.json()
     assert event["event"] == "final_response"
     assert event["show_calendar"] == {"year": now.year, "month": now.month}
+
+
+# --- "add a meeting ..." chat command parsing ---------------------------------
+
+TODAY = date(2026, 10, 17)  # a Saturday
+
+
+def _times(text, today=TODAY):
+    command = calendar_mod.parse_create_command(text, today=today)
+    return command["start"], command["end"]
+
+
+@pytest.mark.parametrize("phrase, start, end", [
+    # The year-1230 bug: dotted, compact and am/pm times
+    ("add a meeting on 20 october at 12.30", (20, 12, 30), (20, 13, 30)),
+    ("add a meeting on 20 october at 14.00", (20, 14, 0), (20, 15, 0)),
+    ("add a meeting on 20 october at 1030", (20, 10, 30), (20, 11, 30)),
+    ("add a meeting on 20 october at 2.30 pm", (20, 14, 30), (20, 15, 30)),
+    ("add a meeting tomorrow at 12.30.", (18, 12, 30), (18, 13, 30)),
+    # Ranges follow a 24-hour day: an earlier end is read as the afternoon, then as the next day
+    ("set a meeting from 11 to 1 tomorrow", (18, 11, 0), (18, 13, 0)),
+    ("add a meeting on 20 october at 2pm to 3", (20, 14, 0), (20, 15, 0)),
+    ("add a meeting on 20 october at 3 to 4pm", (20, 15, 0), (20, 16, 0)),
+    ("add a meeting on 20 october from 23 to 1", (20, 23, 0), (21, 1, 0)),
+    ("add a meeting on 20 october at 14 to 12", (20, 14, 0), (21, 12, 0)),
+    ("schedule a call on friday at 9", (23, 9, 0), (23, 10, 0)),
+    ("add a meeting on 4th of november at 10", (4, 10, 0), (4, 11, 0)),
+])
+def test_parse_create_command_times_and_ranges(phrase, start, end):
+    got_start, got_end = _times(phrase)
+
+    assert (got_start.day, got_start.hour, got_start.minute) == start
+    assert (got_end.day, got_end.hour, got_end.minute) == end
+    assert got_start.year == 2026
+
+
+def test_a_past_date_without_a_year_asks_which_year():
+    with pytest.raises(calendar_mod.CalendarCommandError, match="5 January 2026 has already passed.*5 January 2027"):
+        calendar_mod.parse_create_command("add a meeting on 5 january at 10", today=TODAY)
+
+    start, _ = _times("add a meeting on 5 january 2027 at 10")
+    assert start.year == 2027
+
+
+def test_29_february_parses_in_a_leap_year():
+    start, _ = _times("add a meeting on 29 february at 9", today=date(2028, 1, 10))
+    assert (start.year, start.month, start.day) == (2028, 2, 29)
+
+
+@pytest.mark.parametrize("phrase, message", [
+    ("add a meeting at 3", "Which day"),
+    ("add a meeting on zoom at 3", "couldn't read the date"),
+    ("add a meeting tomorrow at 25", "isn't a valid time"),
+])
+def test_create_commands_that_cannot_be_created_as_stated_explain_why(phrase, message):
+    with pytest.raises(calendar_mod.CalendarCommandError, match=message):
+        calendar_mod.parse_create_command(phrase, today=TODAY)
+
+
+def test_text_without_a_create_trigger_or_a_time_is_not_a_create_command():
+    assert calendar_mod.parse_create_command("when is the meeting", today=TODAY) is None
+    assert calendar_mod.parse_create_command("schedule a team sync", today=TODAY) is None
+
+
+def test_create_event_from_command_creates_and_returns_the_calendar_view(monkeypatch, tmp_path):
+    _use_temp_calendar(monkeypatch, tmp_path)
+
+    result = calendar_mod.create_event_from_command("set a meeting from 11 to 1 tomorrow", today=TODAY)
+
+    assert result == {
+        "response": "Added 'Meeting' on Sunday 18 October 2026, 11:00-13:00.",
+        "show_calendar": {"year": 2026, "month": 10, "day": 18},
+    }
+    assert [e["name"] for e in calendar_mod.events_in_month(2026, 10)] == ["Meeting"]
+
+
+def test_create_event_from_command_writes_nothing_when_it_has_to_ask(monkeypatch, tmp_path):
+    calendar_file = _use_temp_calendar(monkeypatch, tmp_path)
+
+    result = calendar_mod.create_event_from_command("add a meeting on 5 january at 10", today=TODAY)
+
+    assert "already passed" in result["response"] and "show_calendar" not in result
+    assert not calendar_file.exists()
+
+
+def test_ask_stream_create_command_opens_the_calendar_on_the_new_event(monkeypatch, tmp_path):
+    _use_temp_calendar(monkeypatch, tmp_path)
+    client = _logged_in_client(monkeypatch)
+
+    response = client.post("/ask_stream", data={"input": "add a meeting tomorrow at 2pm to 3"})
+    event = json.loads(response.text.strip())
+
+    tomorrow = date.today() + timedelta(days=1)
+    assert event["event"] == "final_response"
+    assert event["show_calendar"] == {"year": tomorrow.year, "month": tomorrow.month, "day": tomorrow.day}
+    assert "14:00-15:00" in event["response"]
+
+
+def test_ask_create_command_renders_the_calendar_with_the_day_highlighted(monkeypatch, tmp_path):
+    _use_temp_calendar(monkeypatch, tmp_path)
+    client = _logged_in_client(monkeypatch)
+
+    response = client.post("/ask", data={"input": "add a meeting tomorrow at 9"})
+
+    tomorrow = date.today() + timedelta(days=1)
+    assert f'data-initial-day="{tomorrow.day}"' in response.text

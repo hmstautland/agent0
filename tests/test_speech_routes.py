@@ -276,3 +276,36 @@ def test_tts_extract_text_requires_authentication():
 
     assert response.status_code == 303
     assert response.headers["location"] == "/login"
+
+
+def _saved_audio_in(monkeypatch, tmp_path):
+    (tmp_path / "clip.wav").write_bytes(b"RIFF0123456789")
+    monkeypatch.setattr(speech_routes, "_saved_audio", speech_routes.StaticFiles(directory=str(tmp_path)))
+
+
+def test_saved_audio_requires_login(monkeypatch, tmp_path):
+    _saved_audio_in(monkeypatch, tmp_path)
+
+    response = TestClient(app).get("/audio/clip.wav", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
+
+
+def test_saved_audio_is_served_with_range_support_when_logged_in(monkeypatch, tmp_path):
+    _saved_audio_in(monkeypatch, tmp_path)
+    client = _logged_in_client(monkeypatch)
+
+    assert client.get("/audio/clip.wav").content == b"RIFF0123456789"
+    partial = client.get("/audio/clip.wav", headers={"Range": "bytes=0-3"})
+    assert partial.status_code == 206 and partial.content == b"RIFF"
+
+
+def test_saved_audio_rejects_paths_outside_the_audio_folder(monkeypatch, tmp_path):
+    audio_dir = tmp_path / "audio"
+    audio_dir.mkdir()
+    _saved_audio_in(monkeypatch, audio_dir)
+    (tmp_path / "secret.txt").write_text("nope")
+    client = _logged_in_client(monkeypatch)
+
+    assert client.get("/audio/..%2Fsecret.txt").status_code == 404

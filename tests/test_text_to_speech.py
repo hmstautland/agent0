@@ -201,6 +201,66 @@ def test_build_filename_stem_dedupes_against_an_existing_file(monkeypatch, tmp_p
     assert tts._build_filename_stem("My Title") == "My Title_2"
 
 
+def test_new_wav_does_not_overwrite_an_existing_mp3_of_the_same_name(monkeypatch, tmp_path):
+    monkeypatch.setattr(tts, "AUDIO_DIR", tmp_path)
+    monkeypatch.setattr(tts, "_synthesize_kokoro", lambda text, voice_id, speed: np.zeros(100, dtype="float32"))
+    (tmp_path / "Weekly Update.mp3").write_bytes(b"existing mp3")
+
+    result = tts.synthesize("hello", voice_id="bf_isabella", output_format="wav", title="Weekly Update")
+
+    assert result["filename"] == "Weekly Update_2.wav"
+    assert (tmp_path / "Weekly Update.mp3").read_bytes() == b"existing mp3"
+
+
+@pytest.mark.parametrize("fmt", ["mp3", "ogg", "flac"])
+def test_non_wav_output_leaves_only_the_final_file(monkeypatch, tmp_path, fmt):
+    monkeypatch.setattr(tts, "AUDIO_DIR", tmp_path)
+    monkeypatch.setattr(tts, "_synthesize_kokoro", lambda text, voice_id, speed: np.zeros(100, dtype="float32"))
+    # Stand in for ffmpeg: just write something to the output path.
+    monkeypatch.setattr(tts, "_run_ffmpeg", lambda src, out, f: Path(out).write_bytes(b"encoded"))
+
+    result = tts.synthesize("hello", voice_id="bf_isabella", output_format=fmt, title="Clip")
+
+    assert sorted(p.name for p in tmp_path.iterdir()) == [f"Clip.{fmt}"]
+    assert result["filename"] == f"Clip.{fmt}"
+
+
+def test_failed_encoding_leaves_no_files_behind(monkeypatch, tmp_path):
+    monkeypatch.setattr(tts, "AUDIO_DIR", tmp_path)
+    monkeypatch.setattr(tts, "_synthesize_kokoro", lambda text, voice_id, speed: np.zeros(100, dtype="float32"))
+
+    def fail(src, out, fmt):
+        raise RuntimeError("ffmpeg is not installed")
+
+    monkeypatch.setattr(tts, "_run_ffmpeg", fail)
+
+    with pytest.raises(RuntimeError):
+        tts.synthesize("hello", voice_id="bf_isabella", output_format="mp3", title="Clip")
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_reserve_output_path_skips_a_name_claimed_by_a_concurrent_request(monkeypatch, tmp_path):
+    monkeypatch.setattr(tts, "AUDIO_DIR", tmp_path)
+    real_build = tts._build_filename_stem
+    calls = []
+
+    def racing_build(title=None):
+        stem = real_build(title)
+        if not calls:
+            # Another request claims the name between the check and the create.
+            (tmp_path / f"{stem}.wav").touch()
+        calls.append(stem)
+        return stem
+
+    monkeypatch.setattr(tts, "_build_filename_stem", racing_build)
+
+    path = tts._reserve_output_path("Clip", "wav")
+
+    assert path.name == "Clip_2.wav"
+    assert calls == ["Clip", "Clip_2"]
+
+
 def test_synthesize_uses_the_given_title_as_the_filename(monkeypatch, tmp_path):
     monkeypatch.setattr(tts, "AUDIO_DIR", tmp_path)
     monkeypatch.setattr(tts, "_synthesize_kokoro", lambda text, voice_id, speed: np.zeros(100, dtype="float32"))
@@ -468,3 +528,12 @@ def test_extract_text_from_document_strips_markdown_for_md_files():
     text = tts.extract_text_from_document(io.BytesIO(b"# Architecture\n\nSee `agent.py` for details."), "notes.md")
 
     assert text == "Architecture\n\nSee agent.py for details."
+
+
+def test_reserving_the_same_title_in_two_formats_never_shares_a_stem(monkeypatch, tmp_path):
+    monkeypatch.setattr(tts, "AUDIO_DIR", tmp_path)
+
+    first = tts._reserve_output_path("Clip", "wav")
+    second = tts._reserve_output_path("Clip", "mp3")
+
+    assert (first.name, second.name) == ("Clip.wav", "Clip_2.mp3")

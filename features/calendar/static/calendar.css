@@ -5,8 +5,6 @@
 
 .calendar-card {
   width: 100%;
-  max-width: 600px;
-  max-height: 85vh;
 
   display: flex;
   flex-direction: column;
@@ -94,6 +92,12 @@
 .calendar-day-today {
   border-color: rgba(255, 255, 255, 0.6);
   background: rgba(255, 255, 255, 0.1);
+}
+
+/* The day of a just-created event */
+.calendar-day-highlight {
+  border-color: rgba(255, 200, 80, 0.9);
+  box-shadow: 0 0 0 1px rgba(255, 200, 80, 0.9);
 }
 
 .calendar-day-has-events {

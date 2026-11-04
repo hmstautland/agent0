@@ -1,0 +1,9 @@
+# Listens on the UI's usual port; the first connection starts the app.
+[Unit]
+Description=Agent 0 web UI (start on demand)
+
+[Socket]
+ListenStream=127.0.0.1:8000
+
+[Install]
+WantedBy=sockets.target
