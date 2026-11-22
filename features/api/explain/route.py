@@ -27,6 +27,7 @@ class ExplainRequest(BaseModel):
     subject: str = Field(min_length=1, max_length=500)
     facts: dict | list | str
     style: Literal["short", "detailed"] = "short"
+    question: str | None = Field(default=None, max_length=300)
 
 
 class ExplainResponse(BaseModel):
@@ -37,4 +38,6 @@ class ExplainResponse(BaseModel):
 @router.post("/explain", response_model=ExplainResponse, responses=ERROR_RESPONSES, summary="Explain a trading signal")
 def explain(body: ExplainRequest):
     user = f"SIGNAL: {body.subject}\n\nFACTS:\n{as_text(body.facts)}"
+    if body.question:
+        user += f"\n\nQUESTION: {body.question}"
     return ExplainResponse(explanation=ask(f"{PROMPT} {STYLES[body.style]}", user), model=llm.OLLAMA_MODEL)
