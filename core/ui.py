@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exception_handlers import http_exception_handler as default_http_exception_handler
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
@@ -12,8 +13,10 @@ from starlette.middleware.sessions import SessionMiddleware
 from core.agent_routes import agent_router
 from core.auth import logout_router, public_router
 from core.speech_routes import speech_router
+from features.api.routes import api_router
 from features.audio.routes import audio_router, audio_static_files
 from features.calendar.routes import calendar_router, calendar_static_files
+from features.config.routes import config_router, config_static_files
 from features.cv.routes import cv_router, cv_static_files
 
 MIN_SESSION_SECRET_LENGTH = 32
@@ -33,7 +36,9 @@ def session_secret():
     return secret
 
 
-app = FastAPI()
+# The default /docs, /redoc and /openapi.json are public and list every route; the API docs
+# are served behind login from the Config area instead (features/config/routes.py).
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 # Feature CSS/JS live under features/<name>/static. They must be
 # mounted before the broader /static mount below - Starlette matches mounts
@@ -41,6 +46,7 @@ app = FastAPI()
 # /static would shadow every /static/<feature>/* request.
 app.mount("/static/calendar", calendar_static_files(), name="calendar_static")
 app.mount("/static/cv", cv_static_files(), name="cv_static")
+app.mount("/static/config", config_static_files(), name="config_static")
 app.mount("/static/audio", audio_static_files(), name="audio_static")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/favicon", StaticFiles(directory="favicon"), name="favicon")
@@ -72,6 +78,8 @@ app.include_router(speech_router)
 app.include_router(audio_router)
 app.include_router(calendar_router)
 app.include_router(cv_router)
+app.include_router(config_router)
+app.include_router(api_router)
 app.include_router(logout_router)
 app.include_router(public_router)
 
@@ -79,6 +87,8 @@ app.include_router(public_router)
 # Exception handler to redirect on 401 (not authenticated)
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    if exc.status_code == 401:
+    # /api/ is for other apps, not browsers: they get the real 401, not a login redirect
+    if exc.status_code == 401 and not request.url.path.startswith("/api/"):
         return RedirectResponse(url="/login", status_code=303)
-    raise exc
+    # Everything else: FastAPI's normal JSON error (re-raising here would be a 500)
+    return await default_http_exception_handler(request, exc)

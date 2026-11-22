@@ -33,7 +33,7 @@ DB_PATH = _load_db_path()
 
 SCHEMA_FILE = Path(__file__).with_name("schema.sql")
 # Bump when schema.sql changes - databases below it get schema.sql applied again
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def _validated_db_path():

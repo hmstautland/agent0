@@ -95,6 +95,18 @@ body {
 .app-header {
   flex-shrink: 0;
   padding: calc(10px + env(safe-area-inset-top)) var(--gutter) 6px;
+
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+/* Top-left link to the Config page (and back to the chat from it) */
+.header-link {
+  color: #fff;
+  text-decoration: underline;
+  font-size: 24px;
+  font-weight: 800;
 }
 
 .app-header .logo {

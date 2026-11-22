@@ -16,6 +16,8 @@ One page per feature: what it does, how to use it, its settings and its limits. 
 | [Audio playback](audio-playback.md) | "play ..." to find and play saved audio |
 | [Event log](event-log.md) | The JSONL log of everything the agent does |
 | [Remote access](remote-access.md) | Using the web UI from other devices over Tailscale, and starting it on demand |
+| [Config](config.md) | A dashboard to switch integrations on and off (feature flags) |
+| [HTTP API](api.md) | Key-authenticated explain and lookup endpoints for the Kush trading-signal app |
 
 ## Adding a page
 
