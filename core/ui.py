@@ -36,7 +36,9 @@ def session_secret():
     return secret
 
 
-app = FastAPI()
+# The default /docs, /redoc and /openapi.json are public and list every route; the API docs
+# are served behind login from the Config area instead (features/config/routes.py).
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 # Feature CSS/JS live under features/<name>/static. They must be
 # mounted before the broader /static mount below - Starlette matches mounts

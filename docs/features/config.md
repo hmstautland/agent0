@@ -8,6 +8,8 @@ After logging in, click **Config** (white underlined link, top-left of the chat 
 
 Today there are two, one per endpoint of the [HTTP API](api.md): *Trading signals (Kush app): Explain* and *Lookup*.
 
+Each integration card links to the **API docs** (Swagger UI, see [HTTP API](api.md)).
+
 ## How it works
 
 `features/config/` has the page (`GET /config`) and the switch (`POST /config/integrations/<key>`), both behind login. The flags are rows in the `integration_flags` table (`storage/integrations.py`); a missing row means off. The list of integrations, with their descriptions, is `features/config/integrations.py`: adding an integration is adding an entry there and checking `storage.integrations.is_enabled(key)` in its routes.

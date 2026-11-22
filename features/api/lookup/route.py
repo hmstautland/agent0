@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 from core import llm
 from features.api.auth import require_integration
-from features.api.common import LOOKUP_FLAG, as_text, ask
+from features.api.common import ERROR_RESPONSES, LOOKUP_FLAG, as_text, ask
 
 router = APIRouter(dependencies=[Depends(require_integration(LOOKUP_FLAG))])
 
@@ -21,9 +21,14 @@ class LookupRequest(BaseModel):
     context: dict | list | str | None = None
 
 
-@router.post("/lookup")
+class LookupResponse(BaseModel):
+    answer: str
+    model: str
+
+
+@router.post("/lookup", response_model=LookupResponse, responses=ERROR_RESPONSES, summary="Answer a lookup question")
 def lookup(body: LookupRequest):
     user = f"QUESTION: {body.query}"
     if body.context is not None:
         user = f"CONTEXT:\n{as_text(body.context)}\n\n{user}"
-    return {"answer": ask(PROMPT, user), "model": llm.OLLAMA_MODEL}
+    return LookupResponse(answer=ask(PROMPT, user), model=llm.OLLAMA_MODEL)

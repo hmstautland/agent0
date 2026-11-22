@@ -70,3 +70,34 @@ def test_unknown_integration_is_404(monkeypatch):
 def test_chat_page_has_config_link(monkeypatch):
     client = _logged_in(monkeypatch)
     assert 'href="/config"' in client.get("/").text
+
+
+def test_api_docs_and_schema_need_login(monkeypatch):
+    client = TestClient(app)
+    for path in ("/config/api-docs", "/config/api-openapi.json"):
+        r = client.get(path, follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"] == "/login"
+
+
+def test_api_docs_page_and_filtered_schema_when_logged_in(monkeypatch):
+    client = _logged_in(monkeypatch)
+    page = client.get("/config/api-docs")
+    assert page.status_code == 200 and "swagger-ui" in page.text and "/config/api-openapi.json" in page.text
+    assert "/config/api-docs" in client.get("/config").text
+
+    schema = client.get("/config/api-openapi.json").json()
+    assert sorted(schema["paths"]) == ["/api/v1/explain", "/api/v1/lookup"]
+    assert schema["info"]["title"] == "agent0 API"
+    assert schema["components"]["securitySchemes"]["bearerAuth"]["scheme"] == "bearer"
+    assert {"ExplainRequest", "ExplainResponse", "LookupRequest", "LookupResponse", "ErrorResponse"} <= set(
+        schema["components"]["schemas"]
+    )
+    # only what the API uses: nothing from the chat/audio/cv routes
+    assert not any(name in schema["components"]["schemas"] for name in ("Body_cv_tailor_cv_tailor_post",))
+
+
+def test_default_public_docs_are_gone(monkeypatch):
+    client = TestClient(app)
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        r = client.get(path, follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"] == "/login"

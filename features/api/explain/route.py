@@ -1,10 +1,12 @@
 """POST /api/v1/explain - a trading signal explained in natural language."""
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Literal
+
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from core import llm
 from features.api.auth import require_integration
-from features.api.common import EXPLAIN_FLAG, as_text, ask
+from features.api.common import ERROR_RESPONSES, EXPLAIN_FLAG, as_text, ask
 
 router = APIRouter(dependencies=[Depends(require_integration(EXPLAIN_FLAG))])
 
@@ -24,12 +26,15 @@ STYLES = {
 class ExplainRequest(BaseModel):
     subject: str = Field(min_length=1, max_length=500)
     facts: dict | list | str
-    style: str = "short"
+    style: Literal["short", "detailed"] = "short"
 
 
-@router.post("/explain")
+class ExplainResponse(BaseModel):
+    explanation: str
+    model: str
+
+
+@router.post("/explain", response_model=ExplainResponse, responses=ERROR_RESPONSES, summary="Explain a trading signal")
 def explain(body: ExplainRequest):
-    if body.style not in STYLES:
-        raise HTTPException(status_code=422, detail="style must be 'short' or 'detailed'")
     user = f"SIGNAL: {body.subject}\n\nFACTS:\n{as_text(body.facts)}"
-    return {"explanation": ask(f"{PROMPT} {STYLES[body.style]}", user), "model": llm.OLLAMA_MODEL}
+    return ExplainResponse(explanation=ask(f"{PROMPT} {STYLES[body.style]}", user), model=llm.OLLAMA_MODEL)

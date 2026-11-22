@@ -84,3 +84,9 @@
   margin-top: 6px;
   color: #fff;
 }
+
+.docs-link {
+  color: #fff;
+  text-decoration: underline;
+  font-weight: 700;
+}

@@ -2,12 +2,26 @@
 import json
 
 from fastapi import HTTPException
+from pydantic import BaseModel
 
 from core import llm
 
 # One on/off flag per endpoint (Config page). Add one for every new endpoint.
 EXPLAIN_FLAG = "trading-signals-explain"
 LOOKUP_FLAG = "trading-signals-lookup"
+
+
+class ErrorResponse(BaseModel):
+    detail: str
+
+
+# Documented on every endpoint (the key check, the endpoint flag and the model call can all fail)
+ERROR_RESPONSES = {
+    401: {"model": ErrorResponse, "description": "Missing or wrong API key"},
+    403: {"model": ErrorResponse, "description": "This endpoint is switched off on agent0's Config page"},
+    502: {"model": ErrorResponse, "description": "The local model is unavailable"},
+    503: {"model": ErrorResponse, "description": "AGENT_API_KEY is not set, so the API is disabled"},
+}
 
 
 def as_text(value):

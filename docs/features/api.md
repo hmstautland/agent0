@@ -21,6 +21,8 @@ POST /api/v1/lookup
 -> {"answer": "...", "model": "qwen3.6:35b"}
 ```
 
+**API docs (Swagger UI):** log in, open **Config**, click **API docs** (`/config/api-docs`). Click **Authorize**, paste the `AGENT_API_KEY`, and use "Try it out". The machine-readable schema (only `/api/v1`) is at `/config/api-openapi.json`, also behind login, so a client can be generated from it. The default `/docs`, `/redoc` and `/openapi.json` are switched off. Swagger UI's own JS/CSS load from a CDN, so that page needs internet in the browser; the API doesn't.
+
 `facts` and `context` can be a string, an object or a list. agent0 doesn't hold the app's portfolio, so for portfolio questions the app sends it in `context`.
 
 Client sketch for the app (fall back to the old template if the call fails):
@@ -40,13 +42,13 @@ def explain(signal_text, facts):
 | --- | --- |
 | 401 | Missing or wrong key (JSON, not a login redirect) |
 | 403 | Key is right but that endpoint is switched off on the Config page |
-| 422 | Bad body, or unknown `style` |
+| 422 | Bad body, or `style` that isn't `short` or `detailed` |
 | 502 | The local model is unavailable |
 | 503 | `AGENT_API_KEY` is not set |
 
 ## How it works
 
-`features/api/` holds a router under `/api/v1` (`routes.py`); each endpoint is its own folder with a `route.py` (`explain/`, `lookup/`), and shared code is in `common.py`. Every request checks the key first (`secrets.compare_digest`), then the endpoint's own flag (`trading-signals-explain` or `trading-signals-lookup`, constants in `common.py`) from the database (`storage/integrations.py`), so switching one off or on applies immediately and doesn't affect the other. Each endpoint's `route.py` sets its flag with `require_integration(...)`; a test walks the published `/api/v1` routes and fails if one is reachable with all flags off.
+`features/api/` holds a router under `/api/v1` (the schema is declared in code: request and response models per endpoint, a `bearerAuth` scheme, and the error responses; `docs.py` filters it for the docs page) (`routes.py`); each endpoint is its own folder with a `route.py` (`explain/`, `lookup/`), and shared code is in `common.py`. Every request checks the key first (`secrets.compare_digest`), then the endpoint's own flag (`trading-signals-explain` or `trading-signals-lookup`, constants in `common.py`) from the database (`storage/integrations.py`), so switching one off or on applies immediately and doesn't affect the other. Each endpoint's `route.py` sets its flag with `require_integration(...)`; a test walks the published `/api/v1` routes and fails if one is reachable with all flags off.
 
 Both endpoints make one plain `core.llm.chat` call with their own system prompt. They never go through `agent.py`, the tool registry or `needs_approval`, and they store nothing in conversation memory.
 

@@ -6,18 +6,23 @@ the integration is switched on.
 import os
 import secrets
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from storage import integrations
 
 
-def require_api_key(request: Request):
+# auto_error=False: we raise our own 401 (JSON, with WWW-Authenticate). Declaring the scheme
+# is what puts the Authorize button in Swagger UI.
+bearer = HTTPBearer(auto_error=False, scheme_name="bearerAuth", description="The AGENT_API_KEY from agent0's .env")
+
+
+def require_api_key(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
     expected = os.getenv("AGENT_API_KEY", "")
     if not expected:
         raise HTTPException(status_code=503, detail="API disabled: AGENT_API_KEY is not set")
-    header = request.headers.get("authorization", "")
-    scheme, _, token = header.partition(" ")
-    if scheme.lower() != "bearer" or not secrets.compare_digest(token.encode(), expected.encode()):
+    token = credentials.credentials if credentials else ""
+    if not token or not secrets.compare_digest(token.encode(), expected.encode()):
         raise HTTPException(status_code=401, detail="Invalid or missing API key", headers={"WWW-Authenticate": "Bearer"})
 
 

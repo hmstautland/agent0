@@ -160,3 +160,16 @@ def test_openapi_schema_builds_without_warnings_and_hides_the_audio_file_server(
         warnings.simplefilter("error")
         paths = app.openapi()["paths"]
     assert "/audio/{path}" not in paths
+
+
+def test_contract_has_typed_responses_errors_enum_and_bearer_scheme():
+    schema = app.openapi()
+    paths = schema["paths"]
+    for path, response in (("/api/v1/explain", "ExplainResponse"), ("/api/v1/lookup", "LookupResponse")):
+        op = paths[path]["post"]
+        assert op["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": f"#/components/schemas/{response}"}
+        assert {"401", "403", "422", "502", "503"} <= set(op["responses"])
+        assert op["security"] == [{"bearerAuth": []}]
+    style = schema["components"]["schemas"]["ExplainRequest"]["properties"]["style"]
+    assert style["enum"] == ["short", "detailed"]
+    assert schema["components"]["securitySchemes"]["bearerAuth"]["scheme"] == "bearer"
