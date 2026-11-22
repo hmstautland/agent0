@@ -47,3 +47,10 @@ CREATE TRIGGER IF NOT EXISTS turns_fts_update AFTER UPDATE ON turns BEGIN
     INSERT INTO turns_fts(rowid, question, answer, actions)
     VALUES (new.id, new.question, new.answer, new.actions);
 END;
+
+-- Integration feature flags (Config page). A missing row means "off".
+CREATE TABLE IF NOT EXISTS integration_flags (
+    key TEXT PRIMARY KEY,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+);

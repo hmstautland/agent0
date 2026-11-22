@@ -1,0 +1,86 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Agent 0 Config</title>
+
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/config/config.css" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+
+    {% include "components/favicons.html" %}
+  </head>
+  <body>
+    <canvas id="starfield"></canvas>
+
+    <div class="app-shell">
+      <header class="app-header">
+        <a class="header-link" href="/">Chat</a>
+        <h1 class="logo">Config</h1>
+      </header>
+
+      <main class="chat-feed">
+        <div class="chat-feed-inner">
+          <section class="config-section">
+            <h2>Integrations</h2>
+            <p class="config-lead">
+              Turn outside apps on or off. Everything is off until you switch
+              it on, and an app that is switched off cannot reach agent0.
+            </p>
+
+            {% for item in integrations %}
+            <div class="response-card integration-card">
+              <div class="integration-head">
+                <h3>{{ item.name }}</h3>
+                <form method="post" action="/config/integrations/{{ item.key }}">
+                  <input type="hidden" name="enabled" value="{{ '0' if item.enabled else '1' }}" />
+                  <button
+                    type="submit"
+                    class="switch {{ 'on' if item.enabled else 'off' }}"
+                    role="switch"
+                    aria-checked="{{ 'true' if item.enabled else 'false' }}"
+                    aria-label="{{ item.name }}"
+                  >
+                    <span class="switch-knob"></span>
+                    <span class="switch-label">{{ 'On' if item.enabled else 'Off' }}</span>
+                  </button>
+                </form>
+              </div>
+
+              <p>{{ item.description }}</p>
+
+              <ul class="endpoint-list">
+                {% for endpoint in item.endpoints %}
+                <li><code>{{ endpoint }}</code></li>
+                {% endfor %}
+              </ul>
+
+              <p class="integration-status">
+                Needs: {{ item.needs }}.
+                {% if api_key_set %}
+                <span class="status-ok">API key configured.</span>
+                {% else %}
+                <span class="status-warn">API key not configured - the API answers 503 until it is set.</span>
+                {% endif %}
+              </p>
+
+              {% if item.decisions %}
+              <h4 class="decisions-title">Decisions</h4>
+              <ul class="decision-list">
+                {% for decision in item.decisions %}
+                <li>{{ decision }}</li>
+                {% endfor %}
+              </ul>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <script src="/static/starfield.js"></script>
+  </body>
+</html>

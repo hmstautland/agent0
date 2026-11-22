@@ -15,6 +15,7 @@ MOUNTS = {
     "/static/calendar/": "features/calendar/static",
     "/static/audio/": "features/audio/static",
     "/static/cv/": "features/cv/static",
+    "/static/config/": "features/config/static",
     "/static/": "static",
     "/media/": "media",
     "/favicon/": "favicon",

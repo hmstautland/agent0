@@ -66,6 +66,7 @@ Create `.env` in the project root with the web login password and a session secr
 ```
 APP_LOGIN_PASSWORD=<your password>
 SESSION_SECRET=<random value>      # python -c "import secrets; print(secrets.token_urlsafe(32))"
+AGENT_API_KEY=<random value>         # optional: lets the Kush trading-signal app call the HTTP API (see docs/features/api.md)
 ```
 
 Run:

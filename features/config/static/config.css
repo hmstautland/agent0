@@ -1,0 +1,86 @@
+/* Config page: integration cards with an on/off switch. */
+
+.config-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--feed-gap);
+}
+
+.config-section + .config-section {
+  margin-top: calc(var(--feed-gap) * 2);
+}
+
+.config-section h2 {
+  color: #fff;
+}
+
+.config-lead {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.integration-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.integration-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.endpoint-list,
+.decision-list {
+  padding-left: 1.2em;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.integration-status {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.status-ok {
+  color: #7ee787;
+}
+
+.status-warn {
+  color: #f0b86e;
+}
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 4px 4px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.switch-knob {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #999;
+}
+
+.switch.on {
+  background: rgba(126, 231, 135, 0.2);
+  border-color: #7ee787;
+}
+
+.switch.on .switch-knob {
+  background: #7ee787;
+}
+
+.decisions-title {
+  margin-top: 6px;
+  color: #fff;
+}
