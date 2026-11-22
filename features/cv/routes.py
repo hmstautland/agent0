@@ -4,6 +4,7 @@ generated .docx files. The writing itself is tools/documents.py - the same code
 the agent's tailor_application tool runs. Static assets (features/cv/static) are
 served at /static/cv."""
 
+import logging
 import re
 from pathlib import Path
 
@@ -19,6 +20,8 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 # What documents.tailor() names its files; nothing else is ever served
 GENERATED_NAME_RE = re.compile(r"^(?:cv|cover-letter)_[a-z0-9-]+_\d{8}_\d{6}_\d{6}\.docx$")
+
+logger = logging.getLogger(__name__)
 
 cv_router = APIRouter(dependencies=[Depends(is_logged_in)])
 
@@ -38,7 +41,8 @@ async def cv_tailor(request: Request):
         master = await _field(form, "master_text", "master_file")
         role = await _field(form, "role_text", "role_file")
     except ValueError as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
+        logger.warning("Invalid CV tailor request data", exc_info=True)
+        return JSONResponse({"error": "Invalid input provided."}, status_code=400)
 
     result, error = await run_in_threadpool(documents.tailor, master, role, form.get("company"))
     if error:
