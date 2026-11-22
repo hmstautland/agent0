@@ -1,4 +1,5 @@
 # agent0
+## view logs for service: journalctl --user -f -u agent0-ui.service
 
 A local-first AI agent: FastAPI web UI + CLI, a multi-step tool-calling loop, and local-only models (Ollama for text, Kokoro for speech, faster-whisper for transcription). No hosted AI APIs.
 
