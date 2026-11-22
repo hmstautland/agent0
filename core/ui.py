@@ -6,6 +6,7 @@ load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler as default_http_exception_handler
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
@@ -36,9 +37,10 @@ def session_secret():
     return secret
 
 
-# The default /docs, /redoc and /openapi.json are public and list every route; the API docs
-# are served behind login from the Config area instead (features/config/routes.py).
-app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(
+    docs_url="/config/api-docs",
+    openapi_url="/config/api-openapi.json",
+)
 
 # Feature CSS/JS live under features/<name>/static. They must be
 # mounted before the broader /static mount below - Starlette matches mounts
@@ -82,6 +84,20 @@ app.include_router(config_router)
 app.include_router(api_router)
 app.include_router(logout_router)
 app.include_router(public_router)
+
+
+def _api_only_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
+    schema["paths"] = {
+        path: ops for path, ops in schema.get("paths", {}).items()
+        if path.startswith("/api/")
+    }
+    app.openapi_schema = schema
+    return schema
+
+app.openapi = _api_only_openapi
 
 
 # Exception handler to redirect on 401 (not authenticated)
