@@ -46,7 +46,8 @@ def audio_static_files():
 _saved_audio = StaticFiles(directory=str(AUDIO_DIR))
 
 
-@audio_router.api_route("/audio/{path:path}", methods=["GET", "HEAD"])
+# Not in the OpenAPI schema: it is a file server, and GET + HEAD would share one operation id
+@audio_router.api_route("/audio/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
 async def saved_audio(path: str, request: Request):
     return await _saved_audio.get_response(path, request.scope)
 
