@@ -70,7 +70,9 @@ def test_tailor_rejects_missing_input_and_unsupported_files(monkeypatch, tmp_pat
     bad_type = client.post("/cv/tailor", data={"role_text": "x"}, files={"master_file": ("cv.pdf", b"%PDF")})
 
     assert missing.status_code == 400 and "role description" in missing.json()["error"]
-    assert bad_type.status_code == 400 and "Unsupported file type" in bad_type.json()["error"]
+    # The route logs the ValueError and answers generically (CodeQL: no exception text to the client)
+    assert bad_type.status_code == 400 and bad_type.json() == {"error": "Invalid input provided."}
+    assert "cv.pdf" not in bad_type.text and "Unsupported" not in bad_type.text
 
 
 def test_only_generated_docx_files_can_be_downloaded(monkeypatch, tmp_path):
