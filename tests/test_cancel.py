@@ -100,6 +100,34 @@ def test_a_stopped_request_is_never_stored_in_the_conversation(log_file):
     assert store.recent_turns("conv-1", 10) == []
 
 
+def test_a_stopped_request_with_error_event_is_never_stored(log_file):
+    """Test that an error raised after stop (e.g. from closed Ollama connection) isn't stored."""
+    from core.llm import LLMError
+
+    request = cancel.begin("req-six-1234", owner="me")
+
+    def events():
+        yield {"event": "status"}
+        # Simulate what happens: stop is called, then LLM call raises LLMError
+        # (because Ollama connection was closed by the abort)
+        request.cancelled.set()
+        raise LLMError("Could not reach Ollama: connection closed")
+
+    # Need to handle the exception in the generator
+    def events_with_error_handling():
+        try:
+            yield from events()
+        except LLMError as e:
+            yield {"event": "error", "message": str(e)}
+
+    stream = cancel.scoped(conversations.record(events_with_error_handling(), "conv-2", "query that was stopped"), request)
+    # Consume the stream
+    list(stream)
+
+    # The turn should NOT be stored even though an error event was yielded
+    assert store.recent_turns("conv-2", 10) == []
+
+
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(auth_mod, "PASSWORD", "testpass")
