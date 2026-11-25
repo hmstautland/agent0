@@ -13,7 +13,7 @@ earlier ones up with the search_history tool.
 import secrets
 from datetime import datetime, timedelta
 
-from core.logger import log_event
+from core.logger import log_event, request_id_var
 from storage import conversations as store
 
 # How much earlier conversation each request is sent: the newest turns that
@@ -92,17 +92,38 @@ def record(events, conversation_id, question, actions=()):
 
     `actions` is read when the final event arrives, so a list the run is
     still filling in (AgentRun.actions) can be passed as is. A run parked for
-    approval is not recorded here - its resume is.
+    approval is not recorded here - its resume is. A cancelled request is not
+    recorded - only fully delivered answers are stored.
     """
     for event in events:
         kind = event.get("event")
         if conversation_id and kind in ("final_response", "error"):
+            # Don't store a cancelled request: if cancel.scoped is active and the
+            # request was cancelled, skip saving. The error that triggered the event
+            # was caused by the cancel, not a real failure.
+            if _is_request_cancelled():
+                yield event
+                continue
             try:
                 store.save_turn(conversation_id, question, _turn_answer(event), list(actions))
             except Exception as e:
                 # Memory is a convenience - a database problem must not eat the answer
                 log_event({"type": "conversation_save_failed", "error": repr(e)})
         yield event
+
+
+def _is_request_cancelled():
+    """Check if the current request (if any) was cancelled."""
+    import core.cancel as cancel
+
+    request_id = request_id_var.get()
+    if not request_id:
+        return False
+
+    # Check if this request is in the active requests and is marked cancelled
+    with cancel._lock:
+        request = cancel._active.get(request_id)
+        return request is not None and request.cancelled.is_set()
 
 
 def _turn_answer(event):
