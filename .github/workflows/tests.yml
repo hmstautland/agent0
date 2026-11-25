@@ -29,7 +29,6 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements.txt
 
       # libportaudio2: sounddevice needs it at import time.
       # xvfb: pynput refuses to import without an X display.
