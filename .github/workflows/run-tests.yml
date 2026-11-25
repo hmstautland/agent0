@@ -1,0 +1,21 @@
+name: Run Tests
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y libportaudio2 xvfb ffmpeg
+      - run: pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+      - run: xvfb-run -a python -m pytest -q
