@@ -2,12 +2,13 @@ name: Tests
 
 on:
   pull_request:
-    branches: [master]
+    branches:
+      - master
   push:
-    branches: [master]
+    branches:
+      - master
   workflow_dispatch:
 
-# A newer push to the same PR makes the older run pointless
 concurrency:
   group: tests-${{ github.ref }}
   cancel-in-progress: true
@@ -16,33 +17,23 @@ permissions:
   contents: read
 
 jobs:
-  # Keep this job name stable: it is the status check to mark as required in
-  # the master branch protection rule (Settings -> Branches).
   pytest:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      # libportaudio2: sounddevice needs it at import time.
-      # xvfb: pynput refuses to import without an X display.
-      # ffmpeg: the format-conversion tests run the real encoder.
-      - name: Install system packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libportaudio2 xvfb ffmpeg
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libportaudio2 xvfb ffmpeg
 
-      # The CPU-only torch index avoids pulling ~GBs of CUDA libraries; the
-      # tests never run Kokoro itself, they only need the package importable.
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
-      - name: Run tests
+      - name: Run pytest
         run: xvfb-run -a python -m pytest -q
