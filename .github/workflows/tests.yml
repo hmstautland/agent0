@@ -25,10 +25,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v4
         with:
           python-version: "3.12"
-          cache: pip
 
       # libportaudio2: sounddevice needs it at import time.
       # xvfb: pynput refuses to import without an X display.
@@ -44,14 +43,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
-
-      # core/speech_to_text.py loads the Whisper "base" model at import time,
-      # which downloads it from Hugging Face - cache it between runs.
-      - name: Cache Hugging Face models
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/huggingface
-          key: hf-models-${{ runner.os }}-whisper-base
 
       - name: Run tests
         run: xvfb-run -a python -m pytest -q
